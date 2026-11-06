@@ -16,8 +16,10 @@ run.bat --share
 * The models are pre-loaded and warmed up at start, so the first judge request is fast.
 
 **If no URL appears** (`lookup gradio-live.com: i/o timeout`): the tunnel client's DNS lookup
-fails on some phone hotspots. `serve.py` retries 6 times and, on every second attempt, resolves the
-relay itself and passes the IP to the client. If it still fails:
+fails on some phone hotspots. `serve.py` retries 6 times and cycles through three strategies:
+Gradio's default client, connect-by-IP (the name is resolved by Windows, the TLS certificate is
+still checked against the real host name) and a public DNS server for the client. On the team's
+iPhone hotspot the connect-by-IP strategy works. If all attempts fail:
 1. switch to another network (home/college Wi-Fi) and run `run.bat --share` again, or
 2. use a Cloudflare quick tunnel (free, no account), in a second terminal while `run.bat` runs:
    ```bash

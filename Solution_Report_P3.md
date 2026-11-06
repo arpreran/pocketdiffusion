@@ -19,7 +19,7 @@ HOW TO FINISH THIS REPORT (delete this comment before submitting)
 | **Team Name** | `[Enter registered team name]` |
 | **Team Members** | `[Full name – USN]`, `[Full name – USN]`, `[Full name – USN]`, `[Full name – USN]` |
 | **GitHub Repository** | `[https://github.com/<user>/pocketdiffusion]`, evaluated commit `[output of: git rev-parse --short HEAD]` |
-| **Live Demo / Deployment** | `[https://xxxxxxxx.gradio.live]` (full-stack web app: FastAPI + SQLite + web UI, served from an RTX 4060 laptop GPU) |
+| **Live Demo / Deployment** | https://23e514e96627866d4b.gradio.live (full-stack web app: FastAPI + SQLite + web UI, served from an RTX 4060 laptop GPU) |
 
 ---
 

@@ -1,0 +1,18 @@
+# torch/torchvision come from the base image
+diffusers
+transformers
+accelerate
+safetensors
+peft
+gradio
+opencv-python-headless
+scipy
+numpy
+pandas
+pyarrow
+matplotlib
+torchmetrics
+torch-fidelity
+psutil
+requests
+huggingface_hub

@@ -1,0 +1,6 @@
+# sample prompts for generate.py (one per line, '#' = comment)
+a small yellow bird standing on a fence
+a red apple to the left of a green bottle on a wooden table
+two dogs playing in the snow
+a black cat and a white dog on a sofa
+a city street at night with neon lights, cinematic

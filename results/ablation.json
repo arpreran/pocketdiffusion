@@ -1,0 +1,192 @@
+{
+ "system": {
+  "full_system": {
+   "clip_mean": 26.710407257080078,
+   "clip_sem": 0.31202099323272703,
+   "pocket_iqa": 86.98986920198989,
+   "niqe": 3.845681311333814,
+   "artifact_flag_rate": 0.07,
+   "artifact_severity": 0.09092431280308412,
+   "e2e_latency_ms": 305.2993160026381,
+   "gen_ms": 163.0895770015195
+  },
+  "minus_rerank": {
+   "clip_mean": 26.362775802612305,
+   "clip_sem": 0.2980841875076294,
+   "pocket_iqa": 87.12012720733763,
+   "niqe": 3.750553910407285,
+   "artifact_flag_rate": 0.12,
+   "artifact_severity": 0.10311979406449083,
+   "e2e_latency_ms": 168.85747099877335,
+   "gen_ms": 76.68886400060728
+  },
+  "minus_postprocess": {
+   "clip_mean": 26.749940872192383,
+   "clip_sem": 0.31709041595458987,
+   "pocket_iqa": 86.91191511460737,
+   "niqe": 3.866289087092812,
+   "artifact_flag_rate": 0.21,
+   "artifact_severity": 0.1840757997495892,
+   "e2e_latency_ms": 236.34052000008523,
+   "gen_ms": 141.1218570015626
+  },
+  "minus_complexity_adaptation": {
+   "clip_mean": 26.381399154663086,
+   "clip_sem": 0.30828003883361815,
+   "pocket_iqa": 86.89232612854508,
+   "niqe": 3.767456048155881,
+   "artifact_flag_rate": 0.09,
+   "artifact_severity": 0.0905058842971139,
+   "e2e_latency_ms": 218.67930699692806,
+   "gen_ms": 119.5483169981162
+  },
+  "minus_planner_fixed_config": {
+   "clip_mean": 26.144067764282227,
+   "clip_sem": 0.28029024600982666,
+   "pocket_iqa": 86.93336805575812,
+   "niqe": 3.7383313629762953,
+   "artifact_flag_rate": 0.1,
+   "artifact_severity": 0.09311752787581862,
+   "e2e_latency_ms": 153.57829800021136,
+   "gen_ms": 84.44716099998914
+  }
+ },
+ "postprocess": {
+  "none": {
+   "clip_mean": 26.112060546875,
+   "pocket_iqa": 86.96686577860258,
+   "niqe": 3.7776793732404337,
+   "artifact_flag_rate": 0.24,
+   "artifact_severity": 0.1676053971732328,
+   "post_ms_per_image": 0.09523599990643561
+  },
+  "all": {
+   "clip_mean": 26.160322189331055,
+   "pocket_iqa": 86.93421566389175,
+   "niqe": 3.7388046115669398,
+   "artifact_flag_rate": 0.1,
+   "artifact_severity": 0.09441468371715106,
+   "post_ms_per_image": 93.53225900005782
+  },
+  "all_minus_grid_notch": {
+   "clip_mean": 26.160322189331055,
+   "pocket_iqa": 86.93421566389175,
+   "niqe": 3.7388046115669398,
+   "artifact_flag_rate": 0.1,
+   "artifact_severity": 0.09441468371715106,
+   "post_ms_per_image": 104.18274499999825
+  },
+  "all_minus_denoise": {
+   "clip_mean": 26.158021926879883,
+   "pocket_iqa": 86.89377102046429,
+   "niqe": 3.73824374853363,
+   "artifact_flag_rate": 0.11,
+   "artifact_severity": 0.09851174610370413,
+   "post_ms_per_image": 95.59155399998417
+  },
+  "all_minus_white_balance": {
+   "clip_mean": 26.157304763793945,
+   "pocket_iqa": 87.0812706801306,
+   "niqe": 3.737217135309852,
+   "artifact_flag_rate": 0.21,
+   "artifact_severity": 0.15884828094414957,
+   "post_ms_per_image": 97.83135299978312
+  },
+  "all_minus_adaptive_gamma": {
+   "clip_mean": 26.159412384033203,
+   "pocket_iqa": 86.87733400414285,
+   "niqe": 3.738265109942125,
+   "artifact_flag_rate": 0.1,
+   "artifact_severity": 0.09436383835147842,
+   "post_ms_per_image": 93.9117059999262
+  },
+  "all_minus_clahe": {
+   "clip_mean": 26.160322189331055,
+   "pocket_iqa": 86.93421566389175,
+   "niqe": 3.7388046115669398,
+   "artifact_flag_rate": 0.1,
+   "artifact_severity": 0.09441468371715106,
+   "post_ms_per_image": 93.59815600008005
+  },
+  "all_minus_saturation_knee": {
+   "clip_mean": 26.159482955932617,
+   "pocket_iqa": 86.9331255694557,
+   "niqe": 3.7382143346671186,
+   "artifact_flag_rate": 0.1,
+   "artifact_severity": 0.09560280364903061,
+   "post_ms_per_image": 93.56822800007649
+  },
+  "all_minus_sharpen": {
+   "clip_mean": 26.110918045043945,
+   "pocket_iqa": 86.91776046173385,
+   "niqe": 3.7804980123627923,
+   "artifact_flag_rate": 0.12,
+   "artifact_severity": 0.0980616646317845,
+   "post_ms_per_image": 59.09689099993557
+  },
+  "_stage_trigger_rate": {
+   "grid_notch": 0.0,
+   "denoise": 0.01,
+   "white_balance": 0.23,
+   "adaptive_gamma": 0.05,
+   "clahe": 0.0,
+   "saturation_knee": 0.01,
+   "sharpen": 1.0
+  }
+ },
+ "resolution": {
+  "native_512": {
+   "clip_mean": 26.112060546875,
+   "pocket_iqa": 86.96686577860258,
+   "niqe": 3.7776793732404337,
+   "artifact_flag_rate": 0.24,
+   "artifact_severity": 0.1676053971732328,
+   "gen_ms": 75.53217900334857
+  },
+  "384_to_512_nearest": {
+   "clip_mean": 26.101938247680664,
+   "pocket_iqa": 86.17235566380478,
+   "niqe": 6.647569412772786,
+   "artifact_flag_rate": 0.26,
+   "artifact_severity": 0.19109482143954812,
+   "gen_ms": 54.27171999763232,
+   "upscale_ms": 1.7937759999767877
+  },
+  "384_to_512_bilinear": {
+   "clip_mean": 25.90838050842285,
+   "pocket_iqa": 83.80163375360297,
+   "niqe": 5.899017003883136,
+   "artifact_flag_rate": 0.55,
+   "artifact_severity": 0.4561821162701043,
+   "gen_ms": 54.27171999763232,
+   "upscale_ms": 2.4275149998720735
+  },
+  "384_to_512_bicubic": {
+   "clip_mean": 26.103435516357422,
+   "pocket_iqa": 85.84048222112193,
+   "niqe": 4.999955892050401,
+   "artifact_flag_rate": 0.39,
+   "artifact_severity": 0.32116983125480153,
+   "gen_ms": 54.27171999763232,
+   "upscale_ms": 2.3395320001873188
+  },
+  "384_to_512_lanczos": {
+   "clip_mean": 26.070646286010742,
+   "pocket_iqa": 86.08708884795551,
+   "niqe": 4.977934655804267,
+   "artifact_flag_rate": 0.38,
+   "artifact_severity": 0.29731652854320606,
+   "gen_ms": 54.27171999763232,
+   "upscale_ms": 2.5681960000656545
+  },
+  "384_to_512_ibp": {
+   "clip_mean": 26.315200805664062,
+   "pocket_iqa": 87.47450918431436,
+   "niqe": 3.825248975231189,
+   "artifact_flag_rate": 0.22,
+   "artifact_severity": 0.1852767337059496,
+   "gen_ms": 54.27171999763232,
+   "upscale_ms": 53.99434299994027
+  }
+ }
+}

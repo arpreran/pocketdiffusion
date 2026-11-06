@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>PocketDiffusion</title>
+  <meta name="description" content="Resource-efficient text-to-image generation for mobile devices">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%238b5cf6'/><stop offset='1' stop-color='%2306b6d4'/></linearGradient></defs><rect x='14' y='4' width='36' height='56' rx='9' fill='url(%23g)'/><circle cx='32' cy='30' r='10' fill='white' opacity='.9'/></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css?v=1.1">
+</head>
+<body>
+  <div class="aurora" aria-hidden="true"><span></span><span></span><span></span></div>
+  <div class="grain" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <a class="brand" href="#studio" data-tab="studio">
+      <svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true">
+        <defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--a1)"/><stop offset="1" stop-color="var(--a2)"/></linearGradient></defs>
+        <rect x="14" y="4" width="36" height="56" rx="9" fill="url(#bm)"/>
+        <circle class="brand-pulse" cx="32" cy="30" r="10" fill="#fff"/>
+        <rect x="26" y="50" width="12" height="3" rx="1.5" fill="#fff" opacity=".7"/>
+      </svg>
+      <span class="brand-name">Pocket<b>Diffusion</b></span>
+    </a>
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-tab="studio" role="tab">Studio</button>
+      <button class="tab" data-tab="gallery" role="tab">Gallery</button>
+      <button class="tab" data-tab="lab" role="tab">Lab</button>
+      <button class="tab" data-tab="race" role="tab">Race</button>
+      <button class="tab" data-tab="about" role="tab">How it works</button>
+    </nav>
+    <div class="top-right">
+      <div class="status-pill" id="statusPill" title="Backend status">
+        <span class="dot"></span><span id="statusText">connecting…</span>
+      </div>
+      <button class="icon-btn" id="themeBtn" title="Toggle light / dark" aria-label="Toggle theme">
+        <svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <!-- ============================== STUDIO ============================== -->
+    <section class="view active" id="view-studio">
+      <div class="studio">
+        <!-- left: prompt deck -->
+        <aside class="card deck">
+          <div class="field">
+            <div class="label-row">
+              <label for="prompt">Prompt</label>
+              <span class="token-ring" id="tokenRing" title="CLIP tokens used (max 77)"><svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="15" class="tr-bg"/><circle cx="18" cy="18" r="15" class="tr-fg" id="tokenArc"/></svg><span id="tokenCount">0</span></span>
+            </div>
+            <textarea id="prompt" rows="4" maxlength="1500" placeholder="Describe the image — objects, colours, positions, style…"></textarea>
+            <div class="chips" id="sceneChips"><span class="chip ghost">scene graph appears as you type</span></div>
+            <div class="complexity"><span>complexity</span><div class="meter"><i id="complexityBar"></i></div><b id="complexityLabel">–</b></div>
+            <button class="ghost-btn" id="inspireBtn" type="button">✦ Inspire me</button>
+          </div>
+
+          <div class="field">
+            <label>Target device</label>
+            <div class="devices" id="devices"></div>
+          </div>
+
+          <div class="field">
+            <label>Mode</label>
+            <div class="segmented" id="modes">
+              <button data-mode="auto" class="on">Auto</button><button data-mode="fast">Fast</button><button data-mode="balanced">Balanced</button><button data-mode="quality">Quality</button>
+            </div>
+          </div>
+
+          <div class="field sliders">
+            <div class="slider">
+              <div class="label-row"><label for="latency">Latency budget</label><output id="latencyOut">1.5 s</output></div>
+              <input type="range" id="latency" min="0" max="1000" value="491">
+            </div>
+            <div class="slider">
+              <div class="label-row"><label for="memory">Memory budget</label><output id="memoryOut">6.5 GB</output></div>
+              <input type="range" id="memory" min="500" max="8000" step="50" value="6500">
+            </div>
+          </div>
+
+          <details class="advanced">
+            <summary>Advanced</summary>
+            <div class="adv-grid">
+              <label>Seed <span class="seed-row"><input type="number" id="seed" min="0" value="42"><button class="icon-btn sm" id="diceBtn" type="button" title="Random seed">🎲</button></span></label>
+              <label>Output size
+                <select id="size"><option>512x512</option><option>768x768</option><option>1024x1024</option><option>768x512</option><option>512x768</option><option>384x384</option><option>256x256</option></select>
+              </label>
+              <label>Post-processing
+                <select id="post"><option value="auto">auto</option><option value="full">full</option><option value="light">light</option><option value="off">off</option></select>
+              </label>
+              <label>Model
+                <select id="preset"><option value="planner">Adaptive planner</option></select>
+              </label>
+              <label class="full">Negative prompt <input type="text" id="negative" maxlength="500" placeholder="only used by CFG models"></label>
+              <label class="toggle"><input type="checkbox" id="rerank" checked><span></span>Best-of-N CLIP re-ranking</label>
+              <label class="toggle"><input type="checkbox" id="verify" checked><span></span>Semantic check (OWLv2)</label>
+              <label class="toggle full"><input type="checkbox" id="semantic"><span></span>Semantic re-ranking — detector chooses the candidate</label>
+            </div>
+          </details>
+
+          <div class="plan-card" id="planCard">
+            <div class="plan-head"><span class="spark">⚡</span> Planner preview</div>
+            <div class="plan-body" id="planBody">Move a slider or type a prompt…</div>
+          </div>
+
+          <button class="go" id="goBtn" type="button"><span class="go-label">Generate</span><kbd>Ctrl ↵</kbd></button>
+        </aside>
+
+        <!-- centre: stage -->
+        <div class="stage-col">
+          <div class="card stage" id="stage">
+            <div class="stage-empty" id="stageEmpty">
+              <div class="orb"></div>
+              <p>Your image materialises here.<br><span>Every denoising step streams live from the GPU.</span></p>
+            </div>
+            <div class="stage-live hidden" id="stageLive">
+              <img id="liveImg" alt="live denoising preview">
+              <div class="ring"><svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="52" class="rg-bg"/><circle cx="60" cy="60" r="52" class="rg-fg" id="ringArc"/></svg><div class="ring-txt"><b id="stepTxt">0/0</b><span id="stageTxt">queued</span></div></div>
+            </div>
+            <div class="stage-final hidden" id="stageFinal">
+              <div class="compare-wrap" id="compareWrap">
+                <img id="imgB" alt="raw output" class="layer">
+                <img id="imgA" alt="final output" class="layer top">
+                <div class="split-bar" id="splitBar"></div>
+                <div class="boxes" id="boxes"></div>
+              </div>
+              <input type="range" id="splitRange" min="0" max="100" value="50" class="split-range hidden" aria-label="before/after split">
+              <div class="view-toggles" id="viewToggles">
+                <button data-view="final" class="on">Final</button>
+                <button data-view="raw">Raw</button>
+                <button data-view="split">Before | After</button>
+                <button data-view="heat">Artifacts</button>
+                <button data-view="boxes">Detections</button>
+                <span class="grow"></span>
+                <a class="icon-btn sm" id="downloadBtn" download title="Download PNG">⤓</a>
+                <button class="icon-btn sm" id="rerollBtn" title="New seed, same settings">↻</button>
+              </div>
+            </div>
+          </div>
+
+          <ol class="track" id="track">
+            <li data-st="analysis">Analyse</li><li data-st="plan">Plan</li><li data-st="denoise">Denoise</li>
+            <li data-st="screen">Screen</li><li data-st="postprocess">Polish</li><li data-st="verify">Verify</li><li data-st="saving">Save</li>
+          </ol>
+
+          <div class="card strip-card">
+            <div class="strip-head"><span>Denoising trajectory</span><small>x₀ estimate after every step</small></div>
+            <div class="strip" id="frames"><span class="muted">—</span></div>
+          </div>
+          <div class="card strip-card">
+            <div class="strip-head"><span>Candidates</span><small>best-of-N, ranked by CLIP + quality − artifacts</small></div>
+            <div class="strip cands" id="cands"><span class="muted">—</span></div>
+          </div>
+          <div class="card strip-card">
+            <div class="strip-head"><span>Classical post-processing</span><small>each stage fires only if its artifact is detected</small></div>
+            <div class="strip" id="stages"><span class="muted">—</span></div>
+          </div>
+        </div>
+
+        <!-- right: telemetry -->
+        <aside class="card telemetry">
+          <div class="big-number">
+            <div><span class="kicker">end-to-end</span><b id="latBig">–</b></div>
+            <div class="speed-badge" id="speedBadge" title="vs. measured SD1.5 FP32 50-step baseline">×– faster</div>
+          </div>
+          <div class="waterfall" id="waterfall"></div>
+          <div class="legend" id="wfLegend"></div>
+          <div class="gauges">
+            <div class="gauge" id="memGauge"></div>
+            <div class="mini-stats" id="miniStats"></div>
+          </div>
+          <div class="section-title">Semantic check</div>
+          <div class="checklist" id="checklist"><span class="muted">objects · counts · colours · relations</span></div>
+          <div class="section-title">Why this plan</div>
+          <ul class="reasons" id="reasons"><li class="muted">—</li></ul>
+          <div class="section-title">Events</div>
+          <ul class="events" id="events"><li class="muted">—</li></ul>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ============================== GALLERY ============================== -->
+    <section class="view" id="view-gallery">
+      <div class="gallery-bar card">
+        <input type="search" id="gSearch" placeholder="Search prompts…">
+        <div class="segmented" id="gFilter">
+          <button data-f="" class="on">All</button><button data-f="fav">★ Favourites</button><button data-f="sd_turbo">SD-Turbo</button><button data-f="sd15">SD1.5-LCM</button>
+        </div>
+        <span class="muted" id="gCount"></span>
+      </div>
+      <div class="masonry" id="gGrid"></div>
+      <button class="ghost-btn center" id="gMore">Load more</button>
+    </section>
+
+    <!-- ============================== LAB ============================== -->
+    <section class="view" id="view-lab">
+      <div class="tiles" id="statTiles"></div>
+      <div class="lab-grid">
+        <div class="card chart-card wide"><h3>Quality vs. computational cost</h3><p class="muted">CLIP-L/14 vs. generation latency (log scale) on 200 unseen COCO prompts · bubble = peak memory</p><div id="chScatter" class="chart"></div></div>
+        <div class="card chart-card"><h3>Latency per configuration</h3><p class="muted">512×512, batch 1, RTX 4060 Laptop (ms, log)</p><div id="chLatency" class="chart"></div></div>
+        <div class="card chart-card"><h3>Peak memory & weights</h3><p class="muted">MB — the phone-relevant number</p><div id="chMemory" class="chart"></div></div>
+        <div class="card chart-card"><h3>Semantic consistency</h3><p class="muted">58 annotated complex prompts · OWLv2 + HSV + geometry</p><div id="chComp" class="chart"></div></div>
+        <div class="card chart-card"><h3>Compression &amp; fewer steps</h3><p class="muted">validation split · CLIP-L</p><div id="chDeg" class="chart"></div></div>
+        <div class="card chart-card wide"><h3>Your session</h3><p class="muted">live from the database</p><div id="chSession" class="chart"></div></div>
+      </div>
+    </section>
+
+    <!-- ============================== RACE ============================== -->
+    <section class="view" id="view-race">
+      <div class="card race-head">
+        <div>
+          <h2>Baseline vs PocketDiffusion</h2>
+          <p class="muted">Same prompt, same seed. Stable Diffusion 1.5 with 50 sampling steps and classifier-free guidance against the adaptive pocket pipeline.</p>
+        </div>
+        <div class="race-form">
+          <input type="text" id="raceprompt" value="a red apple to the left of a green bottle on a wooden table">
+          <input type="number" id="raceSeed" value="7" min="0">
+          <button class="go small" id="raceBtn">Start race</button>
+        </div>
+      </div>
+      <div class="lanes">
+        <div class="card lane" id="laneOpt">
+          <div class="lane-head"><b>PocketDiffusion</b><span class="timer" id="tOpt">0.00 s</span></div>
+          <div class="lane-bar"><i id="pOpt"></i></div>
+          <div class="lane-img"><img id="iOpt" alt=""></div>
+          <div class="lane-meta" id="mOpt"></div>
+        </div>
+        <div class="card lane" id="laneBase">
+          <div class="lane-head"><b>Baseline SD1.5 · 50 steps · CFG</b><span class="timer" id="tBase">0.00 s</span></div>
+          <div class="lane-bar base"><i id="pBase"></i></div>
+          <div class="lane-img"><img id="iBase" alt=""></div>
+          <div class="lane-meta" id="mBase"></div>
+        </div>
+      </div>
+      <div class="card race-result hidden" id="raceResult"></div>
+    </section>
+
+    <!-- ============================== ABOUT ============================== -->
+    <section class="view" id="view-about">
+      <div class="card about">
+        <h2>How PocketDiffusion works</h2>
+        <p>A phone cannot afford Stable Diffusion's 102 UNet evaluations and 4 GB of FP32 weights. PocketDiffusion treats latency and memory as inputs: an adaptive planner chooses a distilled model, the number of steps, the native resolution, the decoder, the weight precision and the number of candidates; a custom denoising loop executes the plan with a deadline and an out-of-memory fallback chain; classical computer vision screens, corrects, upscales and verifies the result.</p>
+        <img src="/docs-static/architecture.png" alt="System architecture diagram" class="arch">
+        <div class="about-grid">
+          <div><h4>Deep learning</h4><p>SD-Turbo (1 step) and SD1.5 + fused LCM-LoRA (2–8 steps), our own sampling loop, FP16, INT8/INT4 weight-only quantisation written from scratch, a 6-layer text encoder distilled from the 12-layer CLIP encoder, TAESD decoder, CLIP re-ranking, OWLv2 verification.</p></div>
+          <div><h4>Classical computer vision</h4><p>Guided filter (from scratch), shades-of-gray white balance, adaptive gamma, CLAHE, saturation soft-knee, FFT detection of 8-px decoder grids + notch filter, Iterative Back-Projection super-resolution, NIQE from scratch, HSV colour naming inside detected boxes.</p></div>
+          <div><h4>Full stack</h4><p>FastAPI backend with a single GPU worker and Server-Sent-Events streaming, SQLite (WAL) persistence for every generation, candidate, post-processing stage and denoising frame, and this framework-free frontend.</p></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- modal -->
+  <div class="modal hidden" id="modal" role="dialog" aria-modal="true">
+    <div class="modal-card card">
+      <button class="icon-btn modal-close" id="modalClose" aria-label="Close">✕</button>
+      <div id="modalBody"></div>
+    </div>
+  </div>
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+
+  <script src="/static/app.js?v=1.1"></script>
+</body>
+</html>

@@ -1,0 +1,24 @@
+# Python 3.11. Install PyTorch first (CUDA 12.6 build):
+#   pip install torch==2.14.1 torchvision --index-url https://download.pytorch.org/whl/cu126
+# then: pip install -r requirements.txt
+accelerate==1.15.0
+diffusers==0.42.1
+gradio==6.31.0
+hf-xet==1.8.0
+huggingface_hub==2.4.0
+matplotlib==3.11.2
+numpy==2.4.6
+opencv-python-headless==5.0.0.93
+pandas==3.1.1
+peft==0.21.2
+pillow==12.3.0
+psutil==7.2.2
+pyarrow==26.0.1
+pytest==9.2.0
+requests==2.34.2
+safetensors==0.8.0
+scipy==1.17.1
+torchmetrics==1.9.0
+tqdm==4.70.1
+transformers==5.22.1
+torch_fidelity==0.4.0

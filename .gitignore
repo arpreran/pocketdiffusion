@@ -1,0 +1,25 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.gradio/
+flagged/
+*.log
+.env
+
+# datasets and generated evaluation images are reproducible with scripts/ and eval/
+data/
+results/gen/
+
+# model weights live in the Hugging Face cache, never in the repo.
+# The distilled text encoder (~160 MB) exceeds GitHub's 100 MB file limit:
+# regenerate it with `python scripts/distill_text_encoder.py` (~10 min) or use Git LFS.
+*.safetensors
+*.bin
+*.ckpt
+
+# local tooling / run outputs
+.claude/
+outputs/
+results/smoke/

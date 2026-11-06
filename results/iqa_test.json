@@ -1,0 +1,44 @@
+{
+ "baseline": {
+  "n_images": 200,
+  "pocket_iqa": 87.60245164496985,
+  "niqe": 4.1941554881770005,
+  "artifact_flag_rate": 0.305,
+  "artifact_severity": 0.30010498706609
+ },
+ "sd15_fp16_dpm20": {
+  "n_images": 200,
+  "pocket_iqa": 87.41231810311172,
+  "niqe": 4.217886619865178,
+  "artifact_flag_rate": 0.315,
+  "artifact_severity": 0.30491770378116223
+ },
+ "sd15_lcm4_taesd": {
+  "n_images": 200,
+  "pocket_iqa": 87.28035873894956,
+  "niqe": 5.021756302041703,
+  "artifact_flag_rate": 0.445,
+  "artifact_severity": 0.42487415409592466
+ },
+ "turbo1_taesd": {
+  "n_images": 200,
+  "pocket_iqa": 87.2096272853958,
+  "niqe": 3.806114442578433,
+  "artifact_flag_rate": 0.205,
+  "artifact_severity": 0.15398472116938905
+ },
+ "pocketdiff": {
+  "n_images": 200,
+  "pocket_iqa": 87.7291106373298,
+  "niqe": 3.7434876778438975,
+  "artifact_flag_rate": 0.075,
+  "artifact_severity": 0.08660129729087344
+ },
+ "pocketdiff_fast": {
+  "n_images": 200,
+  "pocket_iqa": 88.11148125893789,
+  "niqe": 3.7555289353793477,
+  "artifact_flag_rate": 0.185,
+  "artifact_severity": 0.13949897256304145
+ }
+}

@@ -258,6 +258,8 @@ class Planner:
             lam = MODE_LAMBDA.get(mode, 0.9)
         post = "full" if mode in ("quality", "balanced", "auto") else "light"
         tw, th = budget.target_size
+        if not tw or not th:
+            tw, th = analysis.requested_size or (512, 512)
         n_constraints = max(1, len(analysis.objects) + sum(o.color is not None for o in analysis.objects)
                             + sum(o.count > 1 for o in analysis.objects) + len(analysis.relations))
 
@@ -325,7 +327,12 @@ class Planner:
         if best["n"] > 1:
             reasons.append(f"{best['n']} candidates generated in one batch and re-ranked by "
                            f"CLIP + image quality (best-of-N).")
-        if upscale:
+        if upscale and max(tw, th) > 1536:
+            why = f" (prompt asks for {analysis.requested_size_label})" if analysis.requested_size_label else ""
+            reasons.append(f"Output {tw}x{th}{why}: generate {cfg.width}x{cfg.height} natively, then classical "
+                           f"super-resolution (IBP up to 4K + Lanczos) on the CPU. Diffusion models break "
+                           f"down far above their training size, so detail stays that of the native image.")
+        elif upscale:
             reasons.append(f"Target {tw}x{th} differs from native size -> classical IBP "
                            f"super-resolution / resize.")
 

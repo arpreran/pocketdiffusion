@@ -51,7 +51,7 @@
           <div class="field">
             <div class="label-row">
               <label for="prompt">Prompt</label>
-              <span class="token-ring" id="tokenRing" title="CLIP tokens used (max 77)"><svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="15" class="tr-bg"/><circle cx="18" cy="18" r="15" class="tr-fg" id="tokenArc"/></svg><span id="tokenCount">0</span></span>
+              <span class="token-ring" id="tokenRing" title="Prompt tokens. CLIP reads 77 at a time; long prompts are encoded in up to 3 chunks (225 tokens)"><svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="15" class="tr-bg"/><circle cx="18" cy="18" r="15" class="tr-fg" id="tokenArc"/></svg><span id="tokenCount">0</span></span>
             </div>
             <textarea id="prompt" rows="4" maxlength="1500" placeholder="Describe the image — objects, colours, positions, style…"></textarea>
             <div class="chips" id="sceneChips"><span class="chip ghost">scene graph appears as you type</span></div>
@@ -87,7 +87,7 @@
             <div class="adv-grid">
               <label>Seed <span class="seed-row"><input type="number" id="seed" min="0" value="42"><button class="icon-btn sm" id="diceBtn" type="button" title="Random seed">🎲</button></span></label>
               <label>Output size
-                <select id="size"><option>512x512</option><option>768x768</option><option>1024x1024</option><option>768x512</option><option>512x768</option><option>384x384</option><option>256x256</option></select>
+                <select id="size" title="Diffusion runs at ~512 px; bigger outputs are reached with classical IBP super-resolution (sharper, no new detail)"><option value="auto">Auto (size named in prompt, e.g. 8K)</option><option>512x512</option><option>768x768</option><option>1024x1024</option><option>768x512</option><option>512x768</option><option value="1920x1080">Full HD · 1920×1080</option><option value="2560x1440">2K · 2560×1440</option><option value="3840x2160">4K UHD · 3840×2160</option><option value="7680x4320">8K UHD · 7680×4320</option><option>384x384</option><option>256x256</option></select>
               </label>
               <label>Post-processing
                 <select id="post"><option value="auto">auto</option><option value="full">full</option><option value="light">light</option><option value="off">off</option></select>

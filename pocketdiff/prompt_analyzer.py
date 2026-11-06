@@ -69,6 +69,33 @@ STYLE_WORDS = ["photo", "photograph", "painting", "oil painting", "watercolor", 
                "anime", "cartoon", "3d render", "render", "cinematic", "portrait",
                "illustration", "pixel art", "digital art", "realistic", "macro"]
 
+# Resolution words in a prompt ("8K", "4K UHD") are only style tokens for the diffusion model:
+# they never change the output size. The app maps them to an output size that is reached with
+# classical super-resolution (see pipeline.py), longest match first.
+RESOLUTION_WORDS = [
+    (r"\b(8k|4320p)\b", "8K", (7680, 4320)),
+    (r"\b(4k|uhd|2160p)\b", "4K", (3840, 2160)),
+    (r"\b(2k|qhd|1440p)\b", "2K", (2560, 1440)),
+    (r"\b(full\s*hd|fhd|1080p)\b", "Full HD", (1920, 1080)),
+]
+
+
+def requested_output(text: str) -> tuple[str, tuple[int, int]] | None:
+    low = text.lower()
+    for pat, label, size in RESOLUTION_WORDS:
+        if re.search(pat, low):
+            return label, size
+    return None
+
+
+def resolve_output_size(prompt: str, width: int | None, height: int | None) -> tuple[int, int]:
+    """Explicit width/height win; 0/None means 'auto': the size named in the prompt, else 512x512."""
+    if width and height:
+        return int(width), int(height)
+    req = requested_output(prompt)
+    return req[1] if req else (512, 512)
+
+
 # Small, deliberately conservative block-list (the image-level CLIP check is the second line).
 BLOCKLIST = ["nude", "naked", "nsfw", "porn", "sex", "explicit", "gore", "beheading",
              "child abuse", "rape"]
@@ -99,6 +126,9 @@ class PromptAnalysis:
     n_words: int = 0
     n_tokens: int | None = None
     truncated: bool = False
+    n_chunks: int = 1
+    requested_size: tuple[int, int] | None = None
+    requested_size_label: str | None = None
     complexity: float = 0.0
     complexity_label: str = "simple"
     blocked_terms: list[str] = field(default_factory=list)
@@ -148,7 +178,7 @@ def _canonical(phrase: str) -> str | None:
     return None
 
 
-def sanitize_prompt(prompt: str, max_chars: int = 600) -> str:
+def sanitize_prompt(prompt: str, max_chars: int = 2000) -> str:   # long-prompt mode: ~225 tokens
     """Strip control characters / excessive whitespace; cap length (bad-input handling)."""
     if prompt is None:
         return ""
@@ -171,13 +201,25 @@ def analyze_prompt(prompt: str, tokenizer=None) -> PromptAnalysis:
     pa.blocked_terms = sorted({b for b in BLOCKLIST if re.search(rf"\b{re.escape(b)}\b", low)})
 
     if tokenizer is not None:
-        ids = tokenizer(clean, truncation=False, add_special_tokens=True)["input_ids"]
-        pa.n_tokens = len(ids)
-        if len(ids) > tokenizer.model_max_length:
+        from .utils import MAX_PROMPT_CHUNKS, _body_ids, prompt_token_chunks
+        n_body = len(_body_ids(tokenizer, clean))
+        pa.n_tokens = n_body + 2
+        chunks = prompt_token_chunks(tokenizer, clean)
+        pa.n_chunks = len(chunks)
+        used = sum(len(c) for c in chunks)
+        if used < n_body:
             pa.truncated = True
             pa.warnings.append(
-                f"Prompt has {len(ids)} tokens; the text encoder only reads the first "
-                f"{tokenizer.model_max_length}. Put the important objects first.")
+                f"Prompt has {n_body} tokens; long-prompt mode reads up to {MAX_PROMPT_CHUNKS} chunks "
+                f"of 75 ({used} tokens). The rest is ignored - shorten it or put key objects first.")
+        elif pa.n_chunks > 1:
+            pa.warnings.append(
+                f"Long prompt ({n_body} tokens): encoded in {pa.n_chunks} chunks of up to 75 tokens "
+                f"(CLIP reads 77 at a time).")
+
+    req = requested_output(clean)
+    if req:
+        pa.requested_size_label, pa.requested_size = req[0], req[1]
 
     pa.styles = [s for s in STYLE_WORDS if re.search(rf"\b{re.escape(s)}\b", low)]
 

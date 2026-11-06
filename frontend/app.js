@@ -129,7 +129,8 @@ $("#inspireBtn").addEventListener("click", () => {
 });
 
 function settings() {
-  const [w, h] = $("#size").value.split("x").map(Number);
+  const sz = $("#size").value;
+  const [w, h] = sz === "auto" ? [0, 0] : sz.split("x").map(Number);   // 0 x 0 = size named in the prompt
   const seedVal = $("#seed").value.trim();
   return {
     prompt: $("#prompt").value, device_profile: state.device, mode: state.mode, latency_ms: msFromSlider(),
@@ -160,6 +161,7 @@ function renderAnalysis(a, prompt) {
     a.objects.forEach((o) => parts.push(`<span class="chip">${o.color ? `<i class="sw" style="background:${COLORS[o.color] || o.color}"></i>` : ""}${esc(o.name)}${o.count > 1 ? ` <span class="n">×${o.count}</span>` : ""}</span>`));
     a.relations.forEach((r) => parts.push(`<span class="chip rel">${esc(r.subject)} → ${esc(r.relation.replace(/_/g, " "))} → ${esc(r.object)}</span>`));
     a.styles.forEach((s) => parts.push(`<span class="chip style">${esc(s)}</span>`));
+    if (a.requested_size_label) parts.push(`<span class="chip style" title="Generated at ~512 px, then classical super-resolution">output ${esc(a.requested_size_label)} ${a.requested_size[0]}×${a.requested_size[1]} (upscaled)</span>`);
     (a.blocked_terms || []).forEach((b) => parts.push(`<span class="chip warn">blocked: ${esc(b)}</span>`));
     (a.warnings || []).forEach((w) => parts.push(`<span class="chip warn">${esc(w)}</span>`));
     chips.innerHTML = parts.join("") || `<span class="chip ghost">no countable objects recognised — free-form prompt</span>`;
@@ -167,8 +169,10 @@ function renderAnalysis(a, prompt) {
   const n = a.n_tokens || 0;
   $("#tokenCount").textContent = n;
   const arc = $("#tokenArc");
-  arc.style.strokeDashoffset = 94.25 * (1 - Math.min(n / 77, 1));
-  arc.style.stroke = n > 77 ? "var(--bad)" : n > 60 ? "var(--warn)" : "var(--a2)";
+  arc.style.strokeDashoffset = 94.25 * (1 - Math.min(n / 227, 1));   // up to 3 chunks of 75 + BOS/EOS
+  arc.style.stroke = a.truncated ? "var(--bad)" : (a.n_chunks || 1) > 1 ? "var(--warn)" : "var(--a2)";
+  $("#tokenRing").title = `${n} tokens` + ((a.n_chunks || 1) > 1 ? ` · long-prompt mode: ${a.n_chunks} chunks` : "") +
+    (a.truncated ? " · over 225 tokens, the rest is ignored" : " · CLIP reads 77 at a time; up to 3 chunks (225 tokens)");
   $("#complexityBar").style.width = `${Math.round((a.complexity || 0) * 100)}%`;
   $("#complexityLabel").textContent = prompt.trim() ? `${a.complexity_label} ${num(a.complexity, 2)}` : "–";
 }
@@ -291,8 +295,9 @@ function renderResult(g) {
   state.result = g;
   $("#stageLive").classList.add("hidden");
   $("#stageFinal").classList.remove("hidden");
-  $("#downloadBtn").href = media(g.image_path);
-  $("#downloadBtn").setAttribute("download", `pocketdiffusion-${g.id}.png`);
+  const full = g.full_path || g.image_path;   // 2K/4K/8K: full-resolution JPEG
+  $("#downloadBtn").href = media(full);
+  $("#downloadBtn").setAttribute("download", `pocketdiffusion-${g.id}-${g.width}x${g.height}.${full.split(".").pop()}`);
   setView("final");
 
   // telemetry
@@ -494,7 +499,7 @@ async function openDetail(id) {
         <div class="actions">
           <button class="btn primary" id="dRemix">Remix in Studio</button>
           <button class="btn" id="dFav">${g.favorite ? "★ Unfavourite" : "☆ Favourite"}</button>
-          <a class="btn" href="${media(g.image_path)}" download="pocketdiffusion-${esc(g.id)}.png">Download</a>
+          <a class="btn" href="${media(g.full_path || g.image_path)}" download="pocketdiffusion-${esc(g.id)}-${g.width}x${g.height}.${(g.full_path || g.image_path).split(".").pop()}">Download ${g.width}×${g.height}</a>
           <button class="btn danger" id="dDel">Delete</button>
         </div></div></div>`);
     $("#dRemix").onclick = () => { remix(g); closeModal(); };

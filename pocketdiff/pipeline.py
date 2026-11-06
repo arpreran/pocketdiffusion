@@ -12,8 +12,9 @@ from dataclasses import dataclass, field
 import cv2
 import numpy as np
 
-from .classical import AdaptivePostProcessor, artifact_heatmap, detect_artifacts, quality_report
-from .config import GenConfig
+from .classical import AdaptivePostProcessor, artifact_heatmap, detect_artifacts, quality_report, super_resolve
+from .classical.postprocess import Stage
+from .config import MODEL_IDS, GenConfig
 from .engine import DiffusionEngine, GenResult
 from .planner import Budget, Plan, Planner
 from .prompt_analyzer import PromptAnalysis, analyze_prompt
@@ -24,6 +25,7 @@ class PromptRejected(ValueError):
     pass
 
 
+LARGE_OUTPUT_PX = 1536   # longer side above this: post-process at native size, super-resolve last
 OBJECT_WEIGHT = 1.0   # weight of per-object coverage relative to the whole-prompt CLIP score
 _NUM = {1: "a", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven", 8: "eight"}
 _PLURAL = {"person": "people", "mouse": "mice", "knife": "knives", "sheep": "sheep", "skis": "skis",
@@ -134,6 +136,15 @@ class PocketDiffusion:
         for b in self.engine.models.cache.values():
             tok = b.tokenizer
             break
+        if tok is None:   # no model loaded yet: the SD tokenizers share the CLIP BPE vocabulary
+            if getattr(self, "_tok", None) is None:
+                try:
+                    from transformers import CLIPTokenizer
+                    self._tok = CLIPTokenizer.from_pretrained(MODEL_IDS["sd15"], subfolder="tokenizer")
+                except Exception as e:
+                    LOG.warning("tokenizer unavailable for prompt analysis: %s", e)
+                    self._tok = False
+            tok = self._tok or None
         return analyze_prompt(prompt, tokenizer=tok)
 
     # ------------------------------------------------------------------ main entry
@@ -236,7 +247,8 @@ class PocketDiffusion:
         # ---- adaptive classical post-processing (full artifact analysis on the chosen image)
         t0 = time.perf_counter()
         pp = AdaptivePostProcessor(level=postprocess, keep_intermediates=True)
-        post = pp(raw, target_size=upscale_to, measure_after=False)
+        big_target = upscale_to if upscale_to and max(upscale_to) > LARGE_OUTPUT_PX else None
+        post = pp(raw, target_size=None if big_target else upscale_to, measure_after=False)
         timings["postprocess"] = (time.perf_counter() - t0) * 1000
         final = post.image
 
@@ -265,6 +277,21 @@ class PocketDiffusion:
             ver = vr.to_dict()
             ver_img = self.verifier.draw(final, vr, {o.name for o in analysis.objects})
             timings["verify"] = (time.perf_counter() - t0) * 1000
+
+        # ---- very large outputs (2K/4K/8K): classical super-resolution as the last step, so every
+        # metric above ran on the native image and no stage processes a 33-megapixel buffer
+        if big_target is not None:
+            emit("stage", {"name": "super_resolution", "size": list(big_target)})
+            t0 = time.perf_counter()
+            h0, w0 = final.shape[:2]
+            final = super_resolve(final, big_target)
+            ms = (time.perf_counter() - t0) * 1000
+            timings["super_resolution"] = ms
+            post.stages.append(Stage("super_resolution", {"from": [w0, h0], "to": list(big_target),
+                                                          "method": "IBP (<=4K) + Lanczos"}, ms, None))
+            events.append(f"Output {big_target[0]}x{big_target[1]}: classical super-resolution from "
+                          f"{w0}x{h0} (x{big_target[0] / w0:.1f}) in {ms:.0f} ms - sharper, but no new "
+                          f"detail is invented.")
 
         return RunResult(image=final, raw_image=raw, analysis=analysis, plan=plan, config=gen.config,
                          gen=gen, candidates=cands, chosen=chosen, post_stages=post.stages,

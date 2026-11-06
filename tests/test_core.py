@@ -54,7 +54,7 @@ def test_bad_prompts():
     assert analyze_prompt("").warnings
     assert analyze_prompt(None).clean_prompt == ""
     assert sanitize_prompt("a\x00b\n\n  c") == "ab c"
-    assert analyze_prompt("x" * 5000).clean_prompt == "x" * 600
+    assert analyze_prompt("x" * 5000).clean_prompt == "x" * 2000   # cap fits long-prompt mode (225 tokens)
     assert analyze_prompt("a nude person").blocked_terms == ["nude"]
 
 
@@ -172,3 +172,64 @@ def test_planner_respects_budgets(monkeypatch):
     assert low.config.quant in ("int8", "int4")
     imp = pl.plan(simple, P.Budget(latency_ms=1, memory_mb=10))
     assert imp.fallback
+
+
+# ------------------------------------------------------------------ long prompts and 2K/4K/8K outputs
+def _clip_tokenizer():
+    import pytest
+    try:
+        from transformers import CLIPTokenizer
+
+        from pocketdiff.config import MODEL_IDS
+        return CLIPTokenizer.from_pretrained(MODEL_IDS["sd15"], subfolder="tokenizer", local_files_only=True)
+    except Exception:
+        pytest.skip("SD1.5 tokenizer not cached")
+
+
+def test_short_prompt_chunking_equals_standard_encoding():
+    import torch
+
+    from pocketdiff.utils import chunk_ids_tensor, prompt_token_chunks
+    tok = _clip_tokenizer()
+    for p in ["", "a photo of a cat", "a red apple to the left of a green bottle on a wooden table"]:
+        ref = tok([p], padding="max_length", truncation=True, max_length=77, return_tensors="pt").input_ids
+        assert torch.equal(chunk_ids_tensor(tok, prompt_token_chunks(tok, p)), ref)
+
+
+def test_long_prompt_is_split_into_chunks_not_truncated():
+    from pocketdiff.prompt_analyzer import analyze_prompt
+    from pocketdiff.utils import chunk_ids_tensor, prompt_token_chunks
+    tok = _clip_tokenizer()
+    long = ", ".join(["a red umbrella on a wet street"] * 14)          # ~100 tokens
+    chunks = prompt_token_chunks(tok, long)
+    assert len(chunks) == 2 and all(len(c) <= 75 for c in chunks)
+    assert sum(len(c) for c in chunks) == len(tok.tokenize(long))     # nothing dropped
+    assert chunk_ids_tensor(tok, chunks, 3).shape == (3, 77)          # padded to match a negative prompt
+    pa = analyze_prompt(long, tokenizer=tok)
+    assert pa.n_chunks == 2 and not pa.truncated
+    assert analyze_prompt(", ".join(["a red umbrella"] * 80), tokenizer=tok).truncated   # > 225 tokens
+
+
+def test_output_size_keywords():
+    from pocketdiff.prompt_analyzer import analyze_prompt, resolve_output_size
+    p = "neon city at midnight, photorealistic, IMAX, ultra-detailed 8K."
+    assert analyze_prompt(p).requested_size == (7680, 4320)
+    assert resolve_output_size(p, 0, 0) == (7680, 4320)
+    assert resolve_output_size(p, 1024, 1024) == (1024, 1024)       # explicit size wins
+    assert resolve_output_size("a cat in 4k uhd", None, None) == (3840, 2160)
+    assert resolve_output_size("a cat", 0, 0) == (512, 512)
+    assert analyze_prompt("a photo of 8 kittens").requested_size is None
+
+
+def test_super_resolve_8k_shape_and_range():
+    from pocketdiff.classical import super_resolve
+    rng = np.random.default_rng(0)
+    img = rng.random((384, 680, 3)).astype(np.float32)
+    out = super_resolve(img, (7680, 4320))
+    assert out.shape == (4320, 7680, 3) and out.dtype == np.float32
+    assert 0.0 <= out.min() and out.max() <= 1.0
+
+
+def test_snap_resolution_keeps_aspect_for_8k():
+    assert snap_resolution(7680, 4320, 512 * 512) == (680, 384)    # 16:9 stays 16:9
+    assert snap_resolution(3840, 2160, 384 * 384) == (512, 288)

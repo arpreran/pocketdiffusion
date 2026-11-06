@@ -23,7 +23,7 @@ import torch
 
 from .config import DISTILLED_TE_DIR, MODEL_IDS, GenConfig
 from .optimizations import magnitude_prune_, quantize_module_, set_fast_attention
-from .utils import LOG, count_params, gpu_peak_memory, module_bytes, sync
+from .utils import LOG, chunk_ids_tensor, count_params, gpu_peak_memory, module_bytes, prompt_token_chunks, sync
 
 DTYPES = {"fp16": torch.float16, "fp32": torch.float32}
 
@@ -227,20 +227,32 @@ class DiffusionEngine:
         self._emb_cache: OrderedDict[tuple, torch.Tensor] = OrderedDict()
 
     # ------------------------------------------------------------------ text
+    def n_prompt_chunks(self, bundle: ModelBundle, prompt: str) -> int:
+        return len(prompt_token_chunks(bundle.tokenizer, prompt))
+
     @torch.inference_mode()
-    def encode(self, bundle: ModelBundle, prompts: list[str]) -> torch.Tensor:
-        """Prompt encoding with an LRU cache (repeated prompts cost nothing)."""
+    def encode(self, bundle: ModelBundle, prompts: list[str], n_chunks: int | None = None) -> torch.Tensor:
+        """Prompt encoding with an LRU cache (repeated prompts cost nothing).
+
+        Long prompts: CLIP's text encoder reads at most 77 tokens, so longer prompts are split into
+        chunks of <= 75 tokens (cut at a comma where possible), every chunk is encoded on its own
+        with its own BOS/EOS, and the chunk embeddings are concatenated along the sequence axis
+        (77 -> 154 -> 231 tokens). The UNet's cross-attention accepts any sequence length.
+        A prompt of <= 75 tokens gives exactly the same tensor as standard encoding.
+        `n_chunks` pads with empty chunks so the prompt and the negative prompt line up for CFG.
+        """
         out = []
         for p in prompts:
-            k = (bundle.key, p)
+            chunks = prompt_token_chunks(bundle.tokenizer, p)
+            n = max(len(chunks), n_chunks or 1)
+            k = (bundle.key, p, n)
             if k in self._emb_cache:
                 self._emb_cache.move_to_end(k)
                 out.append(self._emb_cache[k])
                 continue
-            ids = bundle.tokenizer([p], padding="max_length", truncation=True,
-                                   max_length=bundle.tokenizer.model_max_length,
-                                   return_tensors="pt").input_ids.to(bundle.device)
-            emb = bundle.text_encoder(ids)[0]
+            ids = chunk_ids_tensor(bundle.tokenizer, chunks, n).to(bundle.device)
+            emb = bundle.text_encoder(ids)[0]                       # (n, 77, d)
+            emb = emb.reshape(1, -1, emb.shape[-1])                 # (1, n*77, d)
             self._emb_cache[k] = emb
             if len(self._emb_cache) > 64:
                 self._emb_cache.popitem(last=False)
@@ -296,9 +308,13 @@ class DiffusionEngine:
         with gpu_peak_memory() as mem:
             sync(dev)
             t0 = time.perf_counter()
-            cond = self.encode(bundle, [prompt])
+            n_chunks = None
+            if cfg.cfg:   # prompt and negative prompt must have the same number of chunks
+                n_chunks = max(self.n_prompt_chunks(bundle, prompt),
+                               self.n_prompt_chunks(bundle, negative_prompt or ""))
+            cond = self.encode(bundle, [prompt], n_chunks)
             if cfg.cfg:
-                uncond = self.encode(bundle, [negative_prompt or ""])
+                uncond = self.encode(bundle, [negative_prompt or ""], n_chunks)
                 emb = torch.cat([uncond.expand(n, -1, -1), cond.expand(n, -1, -1)])
             else:
                 emb = cond.expand(n, -1, -1)

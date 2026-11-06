@@ -73,7 +73,7 @@ Outputs: `eval_P3_<TeamID>.md` (set your team ID and USNs in `team.json`), `resu
 
 | Requirement | Where | How |
 |---|---|---|
-| **A. Image resizing / resolution optimisation** | `pocketdiff/classical/resize.py` | aspect-preserving latent-grid snapping under a pixel budget; generate-small-then-upscale with Iterative Back-Projection SR (vs nearest/bilinear/bicubic/Lanczos) |
+| **A. Image resizing / resolution optimisation** | `pocketdiff/classical/resize.py` | aspect-preserving latent-grid snapping under a pixel budget; generate-small-then-upscale with Iterative Back-Projection SR (vs nearest/bilinear/bicubic/Lanczos); Full HD / 2K / 4K / **8K outputs** (also picked up from "8K" in the prompt) via IBP to 4K + Lanczos, ~2 s for 7680×4320 – sharper enlargement, no invented detail |
 | A. Colour correction & enhancement | `classical/enhance.py` | shades-of-gray WB, adaptive gamma, CLAHE on L\*, saturation soft-knee, vibrance – strengths scale with measured severity |
 | A. Edge-aware post-processing | `classical/filters.py`, `enhance.py` | guided filter from scratch (gray + colour guide), base/detail halo-free sharpening with edge mask, guided denoising |
 | A. Image quality assessment | `classical/iqa.py` | **NIQE implemented from scratch** (MSCN, GGD/AGGD, MVG) with COCO-fitted pristine model; PocketIQA composite; colourfulness, contrast, noise σ, entropy |
@@ -81,7 +81,7 @@ Outputs: `eval_P3_<TeamID>.md` (set your team ID and USNs in `team.json`), `resu
 | **B. Lightweight diffusion T2I** | `pocketdiff/engine.py` | SD-Turbo (1 step) and SD1.5 + LCM-LoRA (2–8 steps) run in our own denoising loop |
 | B. Pretrained model + meaningful adaptation | `engine.py`, `scripts/distill_text_encoder.py` | LCM-LoRA fused into SD1.5 weights; **our 12→6-layer distilled text encoder** (COCO train/val split); planner calibrated on validation data |
 | B. Optimised inference pipeline | `engine.py` | FP16, SDPA attention, CFG removal, embedding cache, cuDNN autotune, batched best-of-N, anytime x0 exit |
-| B. Prompt encoding & conditional generation | `engine.py`, `prompt_analyzer.py` | CLIP tokenizer/encoder with 77-token truncation warning; scene-graph parsing |
+| B. Prompt encoding & conditional generation | `engine.py`, `prompt_analyzer.py` | CLIP tokenizer/encoder with **long-prompt mode**: prompts beyond CLIP's 77 tokens are split at commas into ≤75-token chunks, encoded separately and concatenated (up to 225 tokens; negative prompt padded to match for CFG); scene-graph parsing |
 | **C. ≥2 optimisation strategies** | `optimizations.py`, `config.py` | reduced precision · fewer steps (DPM++/LCM/Turbo) · distillation (LCM, ADD, own KD) · lightweight decoder (TAESD) · **own INT8/INT4 weight quantisation** · magnitude pruning study |
 | C. Optimised vs baseline comparison | `eval/bench_efficiency.py`, `eval/eval_quality.py` | identical prompts and seeds; FP32 SD1.5 50-step baseline |
 | C. Mobile resource requirements | `planner.py`, report §8 | phone profiles (memory budgets, FLOP-based latency estimates) + real CPU-only measurement |

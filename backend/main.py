@@ -70,8 +70,15 @@ class BudgetIn(BaseModel):
     mode: str = "auto"
     latency_ms: float = Field(1500, ge=50, le=120000)
     memory_mb: float | None = Field(None, ge=100, le=64000)
-    width: int = Field(512, ge=128, le=1536)
-    height: int = Field(512, ge=128, le=1536)
+    width: int = Field(512, ge=0, le=7680)      # 0 x 0 = auto: size named in the prompt ("8K"), else 512
+    height: int = Field(512, ge=0, le=7680)
+
+    @field_validator("width", "height")
+    @classmethod
+    def _size(cls, v):
+        if v and v < 128:
+            raise ValueError("width/height must be 0 (auto) or at least 128")
+        return v
 
     @field_validator("mode")
     @classmethod

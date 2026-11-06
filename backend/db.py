@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS generations (
     fallback        INTEGER,
     favorite        INTEGER NOT NULL DEFAULT 0,
     image_path      TEXT,
+    full_path       TEXT,
     raw_path        TEXT,
     heatmap_path    TEXT,
     verify_path     TEXT,
@@ -104,6 +105,9 @@ class Database:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as c:
             c.executescript(SCHEMA)
+            cols = {r["name"] for r in c.execute("PRAGMA table_info(generations)")}
+            if "full_path" not in cols:   # databases created before 2K/4K/8K outputs existed
+                c.execute("ALTER TABLE generations ADD COLUMN full_path TEXT")
 
     @contextmanager
     def connect(self):

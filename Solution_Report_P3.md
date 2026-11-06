@@ -57,7 +57,8 @@ HOW TO FINISH THIS REPORT (delete this comment before submitting)
 > ✍️ **Team: write ~80–100 words.** Facts (all implemented by us with NumPy/OpenCV primitives in `pocketdiff/classical/`):
 > - Artifact detection (`artifacts.py`): blank/NaN, clipped highlights, crushed shadows, Lab colour-cast factor K, dynamic range, over-saturation, Immerkær noise σ, 8-px periodic grid (FFT peak score), Laplacian blur → severities in [0, 1].
 > - Correction (`enhance.py`, `filters.py`): FFT notch filter for the grid, guided-filter (He et al.) edge-aware denoising, shades-of-grey white balance (p = 6), adaptive gamma, CLAHE on L*, saturation soft-knee, guided-filter base/detail sharpening with an edge mask (no halos).
-> - Resolution (`resize.py`): snapping to multiples of 8 under a pixel budget; iterative back-projection (IBP) super-resolution when the planner generates at 384 px.
+> - Resolution (`resize.py`): snapping to multiples of 8 under a pixel budget (keeps the aspect ratio, e.g. 8K 16:9 → 680×384 native); iterative back-projection (IBP) super-resolution when the planner generates at 384 px.
+> - Large outputs: "8K"/"4K" in a prompt are only style words for the model, so the app maps them to an output size reached classically: IBP super-resolution up to 4K + Lanczos to 8K (7680×4320 in ~2 s on the CPU). Diffusion runs at ~512 px only; the enlargement is sharper but adds no new detail.
 > - Quality assessment (`iqa.py`): NIQE written from scratch (MSCN, GGD/AGGD fits, 36 features, MVG distance), pristine model fitted on 120 real COCO validation photos; PocketIQA composite score.
 <!-- /TEAM-TODO -->
 
@@ -81,6 +82,7 @@ HOW TO FINISH THIS REPORT (delete this comment before submitting)
 > - TAESD tiny decoder: 2.45 M vs 83.7 M parameters, 14 ms vs 146 ms decode.
 > - Our own weight-only quantisation: INT8 per output channel, INT4 in groups of 64 with two values per byte (relative weight error 1.1 % / 11.8 %).
 > - Our own denoising loop (`pocketdiff/engine.py`), checked against the diffusers reference (`scripts/smoke_test.py`).
+> - Prompt encoding for long prompts: CLIP reads only 77 tokens, so longer prompts are split into chunks of ≤ 75 tokens (cut at commas), each chunk is encoded separately and the embeddings are concatenated (77 → 154 → 231 tokens; up to 225 prompt tokens). The UNet cross-attention accepts the longer sequence; for CFG the negative prompt is padded to the same number of chunks. Prompts ≤ 75 tokens give exactly the same encoding as before (unit-tested).
 > - Rationale: 98 % of the baseline time is the UNet (13,026 of 13,307 ms), so cutting UNet calls from 102 to 1–4 by distillation is the biggest lever.
 > - Helper models (not generators): CLIP ViT-B/32 for re-ranking and the safety check, OWL-ViT v1 for semantic re-ranking; CLIP ViT-L/14 and OWLv2 are used **only for evaluation** (different models, so we never optimise the metric we report).
 <!-- /TEAM-TODO -->

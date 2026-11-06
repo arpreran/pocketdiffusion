@@ -23,6 +23,7 @@ from PIL import Image
 
 from pocketdiff.config import PRESETS
 from pocketdiff.planner import Budget
+from pocketdiff.prompt_analyzer import resolve_output_size
 from pocketdiff.pipeline import PocketDiffusion, PromptRejected
 from pocketdiff.utils import LOG
 
@@ -168,8 +169,10 @@ class JobManager:
                 job.emit("step", {"i": i, "total": total})
 
         upscale = None
-        if cfg is not None and (p.get("width"), p.get("height")) != (cfg.width, cfg.height):
-            upscale = (int(p.get("width", 512)), int(p.get("height", 512)))
+        if cfg is not None:
+            tw, th = resolve_output_size(p["prompt"], p.get("width", 512), p.get("height", 512))
+            if (tw, th) != (cfg.width, cfg.height):
+                upscale = (tw, th)
         res = pd.run(p["prompt"], budget=self._budget(p), seed=seed, negative_prompt=p.get("negative_prompt") or "",
                      config=cfg, postprocess=None if p.get("postprocess", "auto") == "auto" else p["postprocess"],
                      rerank=bool(p.get("rerank", True)), verify=bool(p.get("verify", True)),
@@ -232,6 +235,7 @@ class JobManager:
 
         cfg = res.config
         v = res.verification or {}
+        big = max(res.image.shape[:2]) > 2048
         row = {
             "id": gid, "created_at": time.time(), "kind": kind, "prompt": res.analysis.clean_prompt,
             "negative_prompt": job.params.get("negative_prompt"), "seed": seed,
@@ -246,7 +250,10 @@ class JobManager:
             "niqe_after": res.iqa_after.get("niqe"), "object_f1": v.get("f1"),
             "all_ok": None if not v else int(bool(v.get("all_satisfied"))), "complexity": res.analysis.complexity,
             "early_exit": int(res.gen.early_exit), "fallback": int(bool(res.plan and res.plan.fallback)),
-            "image_path": save(res.image, "final.png", "PNG"),
+            # 2K/4K/8K: a 2048-px preview for the UI and the full-resolution JPEG for download
+            "image_path": (save(res.image, "final.jpg", size=2048, quality=90) if big
+                           else save(res.image, "final.png", "PNG")),
+            "full_path": save(res.image, "full.jpg", quality=92) if big else None,
             "raw_path": save(res.raw_image, "raw.jpg"),
             "heatmap_path": save(res.heatmap, "heatmap.jpg"),
             "verify_path": save(res.verification_image, "verify.jpg"),

@@ -32,8 +32,9 @@ INTERP = {
 def snap_resolution(width: int, height: int, max_pixels: int = 512 * 512, multiple: int = 8,
                     min_side: int = 128, max_side: int = 1024) -> tuple[int, int]:
     """Closest (w, h) with the same aspect ratio, sides multiple of `multiple`, w*h <= max_pixels."""
-    width = int(np.clip(width or 512, min_side, max_side * 4))
-    height = int(np.clip(height or 512, min_side, max_side * 4))
+    # no per-side clipping before the aspect ratio is taken: 7680x4320 (8K) must stay 16:9
+    width = float(max(width or 512, 1))
+    height = float(max(height or 512, 1))
     aspect = width / height
     scale = min(1.0, math.sqrt(max_pixels / float(width * height)))
     w = width * scale
@@ -74,6 +75,24 @@ def ibp_upscale(lr01: np.ndarray, size: tuple[int, int], iters: int = 4, step: f
     if sharpen > 0:
         x, _ = edge_aware_sharpen(x, amount=sharpen)
     return x.astype(np.float32)
+
+
+def super_resolve(img01: np.ndarray, size: tuple[int, int],
+                  max_ibp_pixels: int = 3840 * 2160) -> np.ndarray:
+    """Very large upscales (e.g. 680x384 -> 8K 7680x4320, x11).
+
+    IBP super-resolution with edge-aware sharpening up to ~4K, then Lanczos for the remaining
+    factor. Keeps memory bounded: an 8K float image is ~400 MB and the guided filter inside the
+    sharpening step needs about ten such buffers. No new detail is invented - the output is a
+    sharper enlargement of the generated image.
+    """
+    w, h = size
+    if w * h <= max_ibp_pixels:
+        return ibp_upscale(img01, size)
+    s = math.sqrt(max_ibp_pixels / float(w * h))
+    mid = (max(8, int(round(w * s / 8)) * 8), max(8, int(round(h * s / 8)) * 8))
+    x = ibp_upscale(img01, mid)
+    return np.clip(cv2.resize(x, (w, h), interpolation=cv2.INTER_LANCZOS4), 0, 1).astype(np.float32)
 
 
 def upscale_comparison(lr01: np.ndarray, size: tuple[int, int]) -> dict[str, np.ndarray]:

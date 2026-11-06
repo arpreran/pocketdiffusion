@@ -161,3 +161,63 @@ def pil(img: np.ndarray) -> Image.Image:
 
 def fmt_ms(ms: float) -> str:
     return f"{ms / 1000:.2f} s" if ms >= 1000 else f"{ms:.0f} ms"
+
+
+# ------------------------------------------------------------------ long prompts (> 77 CLIP tokens)
+MAX_PROMPT_CHUNKS = 3          # 3 x 75 = 225 prompt tokens; CLIP itself reads 77 tokens at a time
+
+
+def _body_ids(tokenizer, text: str) -> list[int]:
+    """Token ids without BOS/EOS and without the 77-token cut (no 'sequence too long' warning)."""
+    return tokenizer(text, add_special_tokens=False, truncation=False, verbose=False)["input_ids"] if text else []
+
+
+def prompt_token_chunks(tokenizer, text: str, max_chunks: int = MAX_PROMPT_CHUNKS) -> list[list[int]]:
+    """Split a prompt's token ids into chunks of <= 75 (model_max_length - 2) tokens.
+
+    A chunk is cut after the last comma in its final 20 tokens when there is one, so phrases such
+    as "dense atmospheric fog" are not split across chunks. Tokens beyond `max_chunks` are dropped
+    (the analyser warns about that). An empty prompt gives one empty chunk.
+    """
+    limit = tokenizer.model_max_length - 2
+    ids = _body_ids(tokenizer, text)
+    comma = set(_body_ids(tokenizer, ","))
+    chunks: list[list[int]] = []
+    while ids and len(chunks) < max_chunks:
+        if len(ids) <= limit:
+            chunks.append(ids)
+            break
+        cut = limit
+        for j in range(limit - 1, limit - 21, -1):
+            if ids[j] in comma:
+                cut = j + 1
+                break
+        chunks.append(ids[:cut])
+        ids = ids[cut:]
+    return chunks or [[]]
+
+
+def chunk_ids_tensor(tokenizer, chunks: list[list[int]], n_chunks: int | None = None):
+    """[n, 77] LongTensor: BOS + chunk + EOS + padding per row; extra rows are empty prompts."""
+    import torch
+
+    L = tokenizer.model_max_length
+    pad = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id
+    rows = list(chunks) + [[]] * max(0, (n_chunks or len(chunks)) - len(chunks))
+    return torch.tensor([[tokenizer.bos_token_id] + c + [tokenizer.eos_token_id] + [pad] * (L - 2 - len(c))
+                         for c in rows], dtype=torch.long)
+
+
+def text_chunks(tokenizer, text: str, limit: int = 75) -> list[str]:
+    """Split a long text at commas into pieces of <= `limit` tokens (for CLIP scoring)."""
+    if len(_body_ids(tokenizer, text)) <= limit:
+        return [text]
+    pieces, cur = [], ""
+    for seg in [s.strip() for s in text.split(",") if s.strip()]:
+        cand = f"{cur}, {seg}" if cur else seg
+        if cur and len(_body_ids(tokenizer, cand)) > limit:
+            pieces.append(cur)
+            cur = seg
+        else:
+            cur = cand
+    return pieces + ([cur] if cur else []) or [text]

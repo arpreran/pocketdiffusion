@@ -41,12 +41,27 @@ class ClipScorer:
 
     @torch.inference_mode()
     def text_features(self, texts: list[str]) -> torch.Tensor:
-        tok = self.processor.tokenizer(texts, padding=True, truncation=True, max_length=77,
+        """Normalised text embeddings. A text longer than CLIP's 77 tokens is split at commas into
+        pieces that fit, and the piece embeddings are averaged (instead of silently cutting it).
+        Texts that fit (all COCO captions) are encoded exactly as before."""
+        from .utils import text_chunks
+
+        pieces, owner = [], []
+        for i, t in enumerate(texts):
+            parts = text_chunks(self.processor.tokenizer, t)
+            pieces += parts
+            owner += [i] * len(parts)
+        tok = self.processor.tokenizer(pieces, padding=True, truncation=True, max_length=77,
                                        return_tensors="pt").to(self.device)
         f = self.model.get_text_features(**tok)
         if not isinstance(f, torch.Tensor):
             f = f.pooler_output if hasattr(f, "pooler_output") else f[0]
-        return torch.nn.functional.normalize(f.float(), dim=-1)
+        f = torch.nn.functional.normalize(f.float(), dim=-1)
+        if len(pieces) == len(texts):
+            return f
+        out = torch.zeros(len(texts), f.shape[-1], device=f.device)
+        out.index_add_(0, torch.tensor(owner, device=f.device), f)
+        return torch.nn.functional.normalize(out, dim=-1)
 
     def clip_score(self, images: list[np.ndarray], prompts: list[str] | str) -> np.ndarray:
         """CLIPScore as in torchmetrics: 100 * max(cos(image, text), 0). One prompt per image,

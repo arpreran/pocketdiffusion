@@ -32,7 +32,7 @@ Alternatives: a Hugging Face Space with a GPU (paid) using the provided `Dockerf
 VM with an NVIDIA GPU: `docker build -t pocketdiffusion . && docker run --gpus all -p 8000:8000 -v pdata:/app/data pocketdiffusion`.
 
 ## GitHub repository
-The repository is already initialised with a first commit. To publish it:
+Published at https://github.com/arpreran/pocketdiffusion (push new commits with `git push`). How it was set up:
 1. On github.com: **New repository** → name `pocketdiffusion` → Public → *no* README/.gitignore → Create.
 2. In this folder:
    ```bash

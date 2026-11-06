@@ -18,7 +18,7 @@ HOW TO FINISH THIS REPORT (delete this comment before submitting)
 | **Problem Title** | Resource-Efficient Text-to-Image Generation for Mobile Devices |
 | **Team Name** | `[Enter registered team name]` |
 | **Team Members** | `[Full name – USN]`, `[Full name – USN]`, `[Full name – USN]`, `[Full name – USN]` |
-| **GitHub Repository** | `[https://github.com/<user>/pocketdiffusion]`, evaluated commit `[output of: git rev-parse --short HEAD]` |
+| **GitHub Repository** | https://github.com/arpreran/pocketdiffusion, evaluated commit `f3ebe8d` (update to your final commit before submitting: `git rev-parse --short HEAD`) |
 | **Live Demo / Deployment** | https://48f46e00d24f89e7ed.gradio.live (full-stack web app: FastAPI + SQLite + web UI, served from an RTX 4060 laptop GPU) |
 
 ---

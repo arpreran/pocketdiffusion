@@ -71,7 +71,13 @@ def main() -> int:
         return 0
     pdf = BUILD / "Solution_Report_P3.pdf"
     if pdf.exists():
-        pdf.unlink()
+        try:
+            pdf.unlink()
+        except PermissionError:      # the old PDF is open in a viewer: write a second copy instead
+            pdf = BUILD / "Solution_Report_P3_latest.pdf"
+            if pdf.exists():
+                pdf.unlink()
+            print(f"(the old PDF is open in a viewer - writing {pdf.name} instead)")
     # separate profile folder: a normally open Edge window would otherwise swallow the headless run
     subprocess.run([edge, "--headless=new", "--disable-gpu", "--no-pdf-header-footer",
                     f"--user-data-dir={BUILD / 'edge-profile'}", "--no-first-run",

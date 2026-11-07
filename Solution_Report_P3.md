@@ -2,7 +2,7 @@
 NOTE (delete before submitting): the prose of this report is AI-drafted and declared as such in
 section 6 (measured AI share: python scripts/ai_share.py Solution_Report_P3.md). Keep the AI-DRAFTED
 markers and the declaration accurate. Still to do: fill the team-contribution table in section 6
-and the evaluated commit hash in the header, then: python scripts/build_report_pdf.py --final
+then: python scripts/build_report_pdf.py --final
 -->
 
 # Hackathon Technical Solution Report
@@ -13,7 +13,7 @@ and the evaluated commit hash in the header, then: python scripts/build_report_p
 | **Problem Title** | Resource-Efficient Text-to-Image Generation for Mobile Devices |
 | **Team Name** | VisionForge (Team 33) |
 | **Team Members** | Preran A R – 1RUA24CSE0332; Punith Anand – 1RUA24CSE0341; Rohan Raj – 1RUA24CSE0373 |
-| **GitHub Repository** | https://github.com/arpreran/pocketdiffusion, evaluated commit `f3ebe8d` (update to your final commit before submitting: `git rev-parse --short HEAD`) |
+| **GitHub Repository** | https://github.com/arpreran/pocketdiffusion, evaluated commit [`cdd3587`](https://github.com/arpreran/pocketdiffusion/tree/cdd3587) |
 | **Live Demo / Deployment** | https://arpreran.github.io/pocketdiffusion/ (permanent address, always available: opens the full-stack web app - FastAPI + SQLite + web UI - on the team's RTX 4060 laptop when it is online, otherwise on the always-on cloud copy https://arpreran--pocketdiffusion.us-east.modal.run) |
 
 ---

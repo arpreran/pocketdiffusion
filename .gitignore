@@ -23,3 +23,4 @@ results/gen/
 .claude/
 outputs/
 results/smoke/
+build/

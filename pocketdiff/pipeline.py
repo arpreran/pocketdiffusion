@@ -175,12 +175,21 @@ class PocketDiffusion:
         old_thr = self.verifier.threshold        # faces in generated images score ~0.1-0.2 with OWLv2
         self.verifier.threshold = FACE_MIN_SCORE
         try:
-            dets = self.verifier.detect(img, ["face"])
+            found = self.verifier.detect(img, ["face", "person"])
         finally:
             self.verifier.threshold = old_thr
         h, w = img.shape[:2]
-        # largest faces first (they matter most); 20 px minimum - below that a redraw only smudges
-        dets = [d for d in dets if min(d.box[2] - d.box[0], d.box[3] - d.box[1]) >= 20]
+        persons = [d for d in found if d.label == "person"]
+        # 20 px minimum - below that a redraw only smudges
+        dets = [d for d in found if d.label == "face" and min(d.box[2] - d.box[0], d.box[3] - d.box[1]) >= 20]
+        # a face must belong to a detected person (no faces drawn onto posters, objects, reflections)
+        dets = [d for d in dets if any(p.box[0] <= d.center[0] <= p.box[2] and p.box[1] <= d.center[1] <= p.box[3]
+                                       for p in persons)]
+        # depth of field: with a clear foreground face, much smaller background faces stay soft
+        biggest = max((d.box[3] - d.box[1] for d in dets), default=0)
+        if biggest >= 60:
+            dets = [d for d in dets if d.box[3] - d.box[1] >= 0.5 * biggest]
+        # largest faces first (they matter most)
         dets = sorted(dets, key=lambda d: -(d.box[2] - d.box[0]) * (d.box[3] - d.box[1]))[:max_faces]
         out = img.copy()
         done = 0

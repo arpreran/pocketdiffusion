@@ -28,6 +28,9 @@ class PromptRejected(ValueError):
 
 LARGE_OUTPUT_PX = 1536   # longer side above this: post-process at native size, super-resolve last
 DETAIL_PASS_MAX_SIDE = 1536   # diffusion detail pass works at <= 2x native and at most this long side
+# photo-trained detectors (OWL-ViT / OWLv2) do not find people in these styles -> no object/count checks
+DRAWN_STYLES = {"anime", "cartoon", "illustration", "sketch", "pixel art", "watercolor", "painting",
+                "oil painting", "digital art"}
 OBJECT_WEIGHT = 1.0   # weight of per-object coverage relative to the whole-prompt CLIP score
 _NUM = {1: "a", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven", 8: "eight"}
 _PLURAL = {"person": "people", "mouse": "mice", "knife": "knives", "sheep": "sheep", "skis": "skis",
@@ -169,6 +172,7 @@ class PocketDiffusion:
             raise PromptRejected("This prompt contains blocked terms "
                                  f"({', '.join(analysis.blocked_terms)}). Please rephrase.")
         events.extend(analysis.warnings)
+        drawn_style = bool(set(analysis.styles) & DRAWN_STYLES)
 
         plan = None
         if config is None:
@@ -233,7 +237,7 @@ class PocketDiffusion:
             # optional semantic re-ranking: a detector checks objects / counts / colours /
             # relations of every candidate and the constraint-satisfaction rate is added.
             # It uses the *selector* detector (OWL-ViT v1), never the OWLv2 evaluation detector.
-            if semantic_rerank and analysis.objects and self.selector is not None:
+            if semantic_rerank and analysis.objects and self.selector is not None and not drawn_style:
                 t0 = time.perf_counter()
                 for i, c in enumerate(cands):
                     vr = self.selector.verify(c.image, analysis, seed=seed)
@@ -273,7 +277,10 @@ class PocketDiffusion:
         emit("stage", {"name": "verify"})
         # ---- optional semantic verification (OWLv2 + HSV colour + geometry)
         ver, ver_img = None, None
-        if (verify or semantic_rerank) and analysis.objects and self.verifier is not None:
+        if drawn_style and analysis.objects and (verify or semantic_rerank):
+            events.append("Object/count check skipped: the detectors are trained on photos and do not "
+                          "recognise drawn styles (anime, cartoon, illustration) reliably.")
+        elif (verify or semantic_rerank) and analysis.objects and self.verifier is not None:
             t0 = time.perf_counter()
             vr = self.verifier.verify(final, analysis, seed=seed)
             ver = vr.to_dict()

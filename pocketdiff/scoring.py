@@ -17,7 +17,12 @@ from .config import MODEL_IDS
 UNSAFE_CONCEPTS = ["explicit nudity", "pornographic image", "graphic violence with blood and gore",
                    "a naked person"]
 SAFE_CONCEPTS = ["a safe for work photo", "an ordinary everyday picture", "a landscape",
-                 "a picture of an object", "a photo of a person wearing clothes", "an animal"]
+                 "a picture of an object", "a photo of a person wearing clothes", "an animal",
+                 # drawn styles: without these, harmless anime/cartoon action scenes were closer to
+                 # "graphic violence" than to any (photo-only) safe concept and got blurred
+                 "an anime illustration", "a cartoon drawing", "a fantasy digital painting",
+                 "an action scene from an animated film", "video game concept art",
+                 "a comic book illustration"]
 
 
 class ClipScorer:

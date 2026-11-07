@@ -244,3 +244,13 @@ def test_spelling_correction_only_fixes_real_typos():
     assert pa.clean_prompt == "A boy lighting a cigarette in a MODERN city"
     keep = "Preran on a skyscraper rooftop, photorealistic, IMAX, ultra-detailed 8K, 35mm"
     assert analyze_prompt(keep, tokenizer=tok).corrections == []      # names / style words untouched
+
+
+def test_real_word_typos_fixed_only_in_context_and_characters_counted():
+    from pocketdiff.prompt_analyzer import analyze_prompt
+    pytest.importorskip("spellchecker")
+    tok = _clip_tokenizer()
+    pa = analyze_prompt("I WANT TWO AMINE CHARACTER FIGHTING IN THE NIGHT", tokenizer=tok)
+    assert "ANIME CHARACTER" in pa.clean_prompt and ["AMINE", "anime"] in pa.corrections
+    assert [(o.name, o.count) for o in pa.objects] == [("person", 2)]
+    assert analyze_prompt("an amine is a chemical compound", tokenizer=tok).corrections == []

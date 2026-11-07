@@ -32,6 +32,9 @@ SYNONYMS = {
     "man": "person", "woman": "person", "boy": "person", "girl": "person", "child": "person",
     "kid": "person", "people": "person", "men": "person", "women": "person", "children": "person",
     "lady": "person", "guy": "person", "astronaut": "person", "player": "person",
+    "character": "person", "hero": "person", "warrior": "person", "fighter": "person",
+    "teacher": "person", "student": "person", "soldier": "person", "ninja": "person",
+    "samurai": "person", "superhero": "person", "wizard": "person", "knight": "person",
     "bike": "bicycle", "motorbike": "motorcycle", "plane": "airplane", "aeroplane": "airplane",
     "jet": "airplane", "ship": "boat", "sofa": "couch", "table": "dining table",
     "desk": "dining table", "television": "tv", "monitor": "tv", "phone": "cell phone",
@@ -214,6 +217,30 @@ def _speller():
     return _SPELL or None
 
 
+# Typos that are themselves real words, so a dictionary cannot catch them; only fixed in context
+# (word before one of the listed next words), e.g. "amine character" -> "anime character".
+CONTEXT_TYPOS = {
+    "amine": ("anime", {"character", "characters", "girl", "girls", "boy", "boys", "style", "art", "man",
+                        "woman", "hero", "heroes", "fight", "fighting", "scene", "drawing", "illustration"}),
+    "anima": ("anime", {"character", "characters", "girl", "boy", "style", "art"}),
+}
+
+
+def fix_context_typos(text: str) -> tuple[str, list[tuple[str, str]]]:
+    fixes: list[tuple[str, str]] = []
+
+    def sub(m: re.Match) -> str:
+        w, nxt = m.group(1), m.group(2)
+        rule = CONTEXT_TYPOS.get(w.lower())
+        if rule and nxt.lower() in rule[1]:
+            c = rule[0].upper() if w.isupper() else (rule[0].capitalize() if w[0].isupper() else rule[0])
+            fixes.append((w, rule[0]))
+            return c + m.group(0)[len(w):]
+        return m.group(0)
+
+    return re.sub(r"\b([A-Za-z]+)(?=\s+([A-Za-z]+))", sub, text), fixes
+
+
 def correct_spelling(text: str, tokenizer=None) -> tuple[str, list[tuple[str, str]]]:
     """Fix misspellings the text encoder cannot read ("ciggerate" -> "cigarette").
 
@@ -261,6 +288,8 @@ def analyze_prompt(prompt: str, tokenizer=None) -> PromptAnalysis:
     fixes: list[tuple[str, str]] = []
     if tokenizer is not None:            # only with the encoder's vocabulary as a safety check
         clean, fixes = correct_spelling(clean, tokenizer)
+        clean, ctx_fixes = fix_context_typos(clean)
+        fixes += ctx_fixes
     pa = PromptAnalysis(prompt=prompt or "", clean_prompt=clean)
     pa.corrections = [list(f) for f in fixes]
     if fixes:

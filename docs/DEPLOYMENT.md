@@ -1,6 +1,21 @@
 # Deployment & submission checklist
 
 ## Live URL (required deliverable)
+
+**Permanent address to submit: https://arpreran.github.io/pocketdiffusion/** (GitHub Pages, free).
+Start the server with
+
+```bash
+run.bat --share --publish-link
+```
+
+Every time the tunnel address changes (network switch, sleep, restart), the server pushes the new
+address to `live.json` on the `gh-pages` branch, and the permanent page forwards visitors there.
+If the laptop is off, the page says the demo is offline and keeps retrying every 20 s.
+Free hosts such as Render (512 MB RAM) or Vercel (short serverless functions, 250 MB) cannot run
+the ~5 GB diffusion model, so the model itself stays on the laptop GPU.
+
+### Details
 The app needs a GPU to answer quickly, so the simplest reliable option is to serve it from the
 laptop's RTX 4060 through Gradio's share relay:
 

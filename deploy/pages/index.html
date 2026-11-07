@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PocketDiffusion – live demo</title>
+<meta name="description" content="Permanent link to the PocketDiffusion live demo (resource-efficient text-to-image generation, CV Hackathon 2026, P3).">
+<style>
+  :root { --bg: #0b0d17; --card: #141829; --line: #262b45; --text: #e8eaf6; --muted: #9aa0c3;
+          --a1: #8b5cf6; --a2: #06b6d4; --ok: #22c55e; --warn: #f59e0b; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px;
+         background: radial-gradient(1200px 600px at 10% -10%, #2a1b5c 0, transparent 60%),
+                     radial-gradient(900px 500px at 110% 110%, #073b4c 0, transparent 60%), var(--bg);
+         color: var(--text); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .card { width: 100%; max-width: 560px; background: var(--card); border: 1px solid var(--line);
+          border-radius: 18px; padding: 28px; box-shadow: 0 20px 60px rgba(0,0,0,.35); }
+  h1 { margin: 0 0 4px; font-size: 26px; letter-spacing: -.02em;
+       background: linear-gradient(90deg, var(--a1), var(--a2)); -webkit-background-clip: text;
+       background-clip: text; color: transparent; }
+  .sub { margin: 0 0 22px; color: var(--muted); font-size: 14px; }
+  .status { display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; border-radius: 12px;
+            background: #0f1222; border: 1px solid var(--line); }
+  .dot { flex: none; width: 12px; height: 12px; margin-top: 6px; border-radius: 50%; background: var(--muted); }
+  .checking .dot { background: var(--a2); animation: pulse 1s infinite ease-in-out; }
+  .ok .dot { background: var(--ok); }
+  .off .dot { background: var(--warn); }
+  @keyframes pulse { 50% { opacity: .3; transform: scale(.8); } }
+  .status b { display: block; }
+  .status small { color: var(--muted); }
+  .links { margin-top: 20px; display: flex; flex-wrap: wrap; gap: 10px; }
+  a.btn { display: inline-block; padding: 10px 14px; border-radius: 10px; text-decoration: none;
+          color: var(--text); border: 1px solid var(--line); background: #1a1f36; font-size: 14px; }
+  a.btn.primary { border: 0; background: linear-gradient(90deg, var(--a1), var(--a2)); color: #fff; font-weight: 600; }
+  a.btn:hover { filter: brightness(1.15); }
+  .hidden { display: none; }
+  footer { margin-top: 18px; font-size: 12px; color: var(--muted); }
+</style>
+</head>
+<body>
+<main class="card">
+  <h1>PocketDiffusion</h1>
+  <p class="sub">Resource-efficient text-to-image generation for mobile devices · Computer Vision Hackathon 2026, P3</p>
+
+  <div id="status" class="status checking">
+    <span class="dot"></span>
+    <div><b id="title">Finding the live demo…</b><small id="detail">Checking that the server is running.</small></div>
+  </div>
+
+  <div class="links">
+    <a id="open" class="btn primary hidden" href="#">Open the live demo</a>
+    <a class="btn" href="https://github.com/arpreran/pocketdiffusion">Source code &amp; report (GitHub)</a>
+  </div>
+  <footer id="foot">This page always points to the current address of the demo, which runs on the team's laptop GPU.</footer>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+function show(cls, title, detail) {
+  $("status").className = "status " + cls;
+  $("title").textContent = title;
+  $("detail").textContent = detail;
+}
+async function check() {
+  show("checking", "Finding the live demo…", "Checking that the server is running.");
+  let info;
+  try {
+    info = await (await fetch("live.json?t=" + Date.now(), { cache: "no-store" })).json();
+  } catch {
+    show("off", "Could not read the current address", "Retrying in 20 seconds.");
+    return setTimeout(check, 20000);
+  }
+  const url = (info.url || "").replace(/\/+$/, "");
+  $("open").href = url;
+  try {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 12000);
+    const r = await fetch(url + "/api/system", { signal: ctl.signal, cache: "no-store" });
+    clearTimeout(timer);
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const s = await r.json();
+    const gpu = s.gpu ? s.gpu.name.replace("NVIDIA GeForce ", "") : "CPU";
+    show("ok", "Live demo is running — opening it…", `${gpu} · ${s.ready ? "ready" : "warming up"}`);
+    $("open").classList.remove("hidden");
+    setTimeout(() => location.replace(url), 800);
+  } catch {
+    show("off", "The live demo is offline right now",
+         "The laptop that runs it is off, asleep or reconnecting to the internet. " +
+         "This page checks again every 20 seconds and opens the demo as soon as it is back." +
+         (info.updated ? ` Last address published ${info.updated}.` : ""));
+    $("open").classList.remove("hidden");
+    $("open").textContent = "Try the last address anyway";
+    setTimeout(check, 20000);
+  }
+}
+check();
+</script>
+</body>
+</html>

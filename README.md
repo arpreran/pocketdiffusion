@@ -27,6 +27,11 @@ Compositional benchmark (58 annotated prompts: objects / counts / colours / spat
 Full tables, ablations and failure cases: `eval_P3_<TeamID>.md`. Every number is produced by `eval/`.
 <!-- /RESULTS-HIGHLIGHTS -->
 
+## Live demo
+
+**https://arpreran.github.io/pocketdiffusion/** - permanent address. It checks that the demo server
+(the team's RTX 4060 laptop) is running and forwards to it; when the laptop is offline it says so.
+
 ## Quick start
 
 ```bash

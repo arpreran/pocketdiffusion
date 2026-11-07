@@ -115,16 +115,70 @@ def _public_ok(url: str) -> bool:
         return False
 
 
-def keep_tunnel_alive(port: int, interval: float = 60.0) -> None:
+ROOT_DIR = Path(__file__).resolve().parent
+PAGES_DIR = ROOT_DIR / "data" / "pages"        # local clone of the repo's gh-pages branch
+PAGES_BRANCH = "gh-pages"
+
+
+def publish_live_url(url: str) -> None:
+    """Write the current public URL to live.json on the repo's gh-pages branch.
+
+    GitHub Pages serves deploy/pages/index.html at a permanent address
+    (https://<user>.github.io/<repo>/); that page reads live.json, checks the server is up and
+    forwards visitors - so the address given to examiners never changes, even when the tunnel
+    URL does. Uses the git credentials already stored on this computer; failures are only logged.
+    """
+    import json
+    import shutil
+    import subprocess
+
+    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+
+    def git(*args, cwd=PAGES_DIR):
+        return subprocess.run(["git", *args], cwd=cwd, env=env, capture_output=True, text=True, timeout=180)
+
+    try:
+        if not (PAGES_DIR / ".git").exists():
+            origin = git("remote", "get-url", "origin", cwd=ROOT_DIR).stdout.strip()
+            if not origin:
+                print("[pages] no git remote 'origin' - permanent page not updated", flush=True)
+                return
+            r = git("clone", "--branch", PAGES_BRANCH, "--single-branch", "--depth", "1", origin,
+                    str(PAGES_DIR), cwd=ROOT_DIR)
+            if r.returncode:
+                print(f"[pages] could not clone {PAGES_BRANCH}: {r.stderr.strip()[-200:]}", flush=True)
+                return
+        else:
+            git("pull", "--ff-only", "--depth", "1")
+        shutil.copyfile(ROOT_DIR / "deploy" / "pages" / "index.html", PAGES_DIR / "index.html")
+        (PAGES_DIR / "live.json").write_text(
+            json.dumps({"url": url, "updated": time.strftime("%d %b %Y, %H:%M")}) + "\n", encoding="utf-8")
+        git("add", "-A")
+        if git("diff", "--cached", "--quiet").returncode == 0:
+            return                                          # nothing changed
+        git("commit", "-m", f"Live demo address: {url}")
+        r = git("push", "origin", PAGES_BRANCH)
+        if r.returncode:
+            print(f"[pages] push failed: {r.stderr.strip()[-200:]}", flush=True)
+        else:
+            print(f"[pages] permanent page now forwards to {url} (live within ~1 min)", flush=True)
+    except Exception as e:  # never let publishing break the server
+        print(f"[pages] could not update the permanent page: {type(e).__name__}: {e}", flush=True)
+
+
+def keep_tunnel_alive(port: int, interval: float = 60.0, publish: bool = False) -> None:
     """Open the public link and keep it alive.
 
     The relay drops the link when the laptop switches network or sleeps (gradio.live then answers
     404 although the local server is fine). Every minute the public URL is checked from outside;
     after two failed checks in a row the old tunnel is closed and a new one opened (new URL, printed
-    in the box and written to data/live_url.txt).
+    in the box and written to data/live_url.txt). With `publish`, every new URL is also pushed to
+    the permanent GitHub Pages address (see publish_live_url).
     """
     from gradio import tunneling
     url = open_tunnel(port)
+    if url and publish:
+        publish_live_url(url)
     fails = 0
     while True:
         time.sleep(interval)
@@ -143,7 +197,10 @@ def keep_tunnel_alive(port: int, interval: float = 60.0) -> None:
         tunneling.CURRENT_TUNNELS.clear()
         new = open_tunnel(port)
         if new and url and new != url:
-            print(f"[share] THE LINK CHANGED: {url} -> {new}  (send the new one)", flush=True)
+            print(f"[share] THE LINK CHANGED: {url} -> {new}"
+                  + ("  (permanent page updated automatically)" if publish else "  (send the new one)"), flush=True)
+        if new and publish:
+            publish_live_url(new)
         url, fails = new, 0
 
 
@@ -154,6 +211,8 @@ def main() -> None:
     ap.add_argument("--share", action="store_true")
     ap.add_argument("--no-warmup", action="store_true")
     ap.add_argument("--online", action="store_true")
+    ap.add_argument("--publish-link", action="store_true",
+                    help="with --share: keep the permanent GitHub Pages page pointing at the current link")
     args = ap.parse_args()
 
     import uvicorn
@@ -162,7 +221,8 @@ def main() -> None:
     if not args.no_warmup:
         jobs.submit("warmup", {})
     if args.share:
-        threading.Thread(target=lambda: (time.sleep(2), keep_tunnel_alive(args.port)), daemon=True).start()
+        threading.Thread(target=lambda: (time.sleep(2), keep_tunnel_alive(args.port, publish=args.publish_link)),
+                         daemon=True).start()
     print(f"PocketDiffusion -> http://127.0.0.1:{args.port}", flush=True)
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
 

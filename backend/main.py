@@ -26,6 +26,7 @@ import threading
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -54,6 +55,9 @@ EXAMPLES = [
 
 app = FastAPI(title="PocketDiffusion API", version="1.0.0")
 app.add_middleware(GZipMiddleware, minimum_size=1024)
+# read-only cross-origin GETs, so the permanent status page (GitHub Pages) can check that this
+# server is up before forwarding visitors to it; writes (POST/DELETE) stay same-origin only
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["GET"], allow_headers=[])
 db = Database(DATA_DIR / "pocketdiffusion.db")
 jobs = JobManager(db, STORE)
 STORE.mkdir(parents=True, exist_ok=True)

@@ -270,6 +270,55 @@ class DiffusionEngine:
             x = dec.decode(latents.to(bundle.dtype) / dec.config.scaling_factor).sample
         return (x.float() / 2 + 0.5).clamp(0, 1)
 
+    @torch.inference_mode()
+    def refine(self, image01: np.ndarray, prompt: str, cfg: GenConfig, size: tuple[int, int],
+               strength: float = 0.5, steps: int = 2, seed: int = 0) -> tuple[np.ndarray, float]:
+        """Diffusion detail pass for large outputs (image-to-image, "hires fix").
+
+        The image is enlarged to `size` (about 2x native), encoded into the latent space, noised to
+        an intermediate timestep and denoised from there: the UNet redraws fine, prompt-consistent
+        detail (raindrops, windows, fabric) that pure interpolation cannot invent, while the low
+        frequencies - the composition - come from the original image. For SD-Turbo, 2 scheduler
+        steps at strength 0.5 means a single UNet call. Returns (image, milliseconds).
+        """
+        cfg = resolve_device(cfg)
+        bundle = self.models.get(cfg)
+        dev, dtype = bundle.device, bundle.dtype
+        w, h = size
+        sync(dev)
+        t0 = time.perf_counter()
+        x = torch.from_numpy(np.ascontiguousarray(np.clip(image01, 0, 1))).permute(2, 0, 1)[None]
+        x = torch.nn.functional.interpolate(x.to(dev, torch.float32), size=(h, w), mode="bicubic",
+                                            align_corners=False).clamp(0, 1)
+        x = (x * 2 - 1).to(dtype)
+        if cfg.vae == "taesd":
+            lat0 = self.models.taesd(dev, dtype).encode(x).latents
+        else:
+            vae = self.models.full_vae(bundle)
+            lat0 = vae.encode(x).latent_dist.mean * vae.config.scaling_factor
+        emb = self.encode(bundle, [prompt])
+
+        sched = make_scheduler(cfg.scheduler, bundle.scheduler_config)
+        sched.set_timesteps(steps, device=dev)
+        t_begin = steps - min(max(int(round(steps * strength)), 1), steps)
+        timesteps = sched.timesteps[t_begin * sched.order:]
+        if hasattr(sched, "set_begin_index"):
+            sched.set_begin_index(t_begin * sched.order)
+        noise = torch.randn(lat0.shape, generator=torch.Generator("cpu").manual_seed(int(seed) + 7))
+        lat = sched.add_noise(lat0, noise.to(dev, dtype), timesteps[:1])
+        x0 = None
+        for t in timesteps:
+            inp = sched.scale_model_input(lat, t)
+            eps = bundle.unet(inp, t, encoder_hidden_states=emb).sample
+            x_t = lat
+            out = sched.step(eps, t, lat, return_dict=True)
+            lat = out.prev_sample
+            x0 = self._x0(out, sched, eps, x_t, t)
+        final = x0 if (cfg.scheduler == "lcm" and x0 is not None) else lat
+        img = self._to_numpy(self.decode(bundle, final, cfg.vae))[0]
+        sync(dev)
+        return img, (time.perf_counter() - t0) * 1000
+
     @staticmethod
     def _to_numpy(x: torch.Tensor) -> list[np.ndarray]:
         x = torch.nan_to_num(x, nan=0.0)

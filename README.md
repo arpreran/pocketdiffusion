@@ -78,7 +78,7 @@ Outputs: `eval_P3_<TeamID>.md` (set your team ID and USNs in `team.json`), `resu
 
 | Requirement | Where | How |
 |---|---|---|
-| **A. Image resizing / resolution optimisation** | `pocketdiff/classical/resize.py` | aspect-preserving latent-grid snapping under a pixel budget; generate-small-then-upscale with Iterative Back-Projection SR (vs nearest/bilinear/bicubic/Lanczos); Full HD / 2K / 4K / **8K outputs** (also picked up from "8K" in the prompt) via IBP to 4K + Lanczos, ~2 s for 7680×4320 – sharper enlargement, no invented detail |
+| **A. Image resizing / resolution optimisation** | `pocketdiff/classical/resize.py` | aspect-preserving latent-grid snapping under a pixel budget; generate-small-then-upscale with Iterative Back-Projection SR (vs nearest/bilinear/bicubic/Lanczos); Full HD / 2K / 4K / **8K outputs** (also picked up from "8K" in the prompt) via a **diffusion detail pass** (2× enlargement + one SD-Turbo image-to-image step that redraws fine detail) followed by IBP to 4K + Lanczos – 7680×4320 in ≈5 s |
 | A. Colour correction & enhancement | `classical/enhance.py` | shades-of-gray WB, adaptive gamma, CLAHE on L\*, saturation soft-knee, vibrance – strengths scale with measured severity |
 | A. Edge-aware post-processing | `classical/filters.py`, `enhance.py` | guided filter from scratch (gray + colour guide), base/detail halo-free sharpening with edge mask, guided denoising |
 | A. Image quality assessment | `classical/iqa.py` | **NIQE implemented from scratch** (MSCN, GGD/AGGD, MVG) with COCO-fitted pristine model; PocketIQA composite; colourfulness, contrast, noise σ, entropy |

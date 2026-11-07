@@ -296,13 +296,27 @@ function listen(id) {
 }
 
 /* ------------------------------------------------------------------ result rendering */
+function sizeLabel(w, h) {
+  const m = Math.max(w, h);
+  return m >= 7680 ? "8K" : m >= 3840 ? "4K" : m >= 2560 ? "2K" : m >= 1920 ? "Full HD" : `${m}px`;
+}
 function renderResult(g) {
   state.result = g;
   $("#stageLive").classList.add("hidden");
   $("#stageFinal").classList.remove("hidden");
   const full = g.full_path || g.image_path;   // 2K/4K/8K: full-resolution JPEG
+  const fname = `pocketdiffusion-${g.id}-${g.width}x${g.height}.${full.split(".").pop()}`;
   $("#downloadBtn").href = media(full);
-  $("#downloadBtn").setAttribute("download", `pocketdiffusion-${g.id}-${g.width}x${g.height}.${full.split(".").pop()}`);
+  $("#downloadBtn").setAttribute("download", fname);
+  const hd = $("#hdDownload");                 // big outputs: make the full-resolution file obvious
+  if (g.full_path) {
+    hd.href = media(g.full_path);
+    hd.setAttribute("download", fname);
+    hd.textContent = `⤓ ${sizeLabel(g.width, g.height)} · ${g.width}×${g.height}`;
+    hd.classList.remove("hidden");
+  } else {
+    hd.classList.add("hidden");
+  }
   setView("final");
 
   // telemetry

@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/styles.css?v=1.1">
+  <link rel="stylesheet" href="/static/styles.css?v=1.3">
 </head>
 <body>
   <div class="aurora" aria-hidden="true"><span></span><span></span><span></span></div>
@@ -136,7 +136,8 @@
                 <button data-view="heat">Artifacts</button>
                 <button data-view="boxes">Detections</button>
                 <span class="grow"></span>
-                <a class="icon-btn sm" id="downloadBtn" download title="Download PNG">⤓</a>
+                <a class="hd-download hidden" id="hdDownload" download title="Full-resolution file (the page shows a 2048-px preview)"></a>
+                <a class="icon-btn sm" id="downloadBtn" download title="Download">⤓</a>
                 <button class="icon-btn sm" id="rerollBtn" title="New seed, same settings">↻</button>
               </div>
             </div>
@@ -263,6 +264,6 @@
   </div>
   <div class="toasts" id="toasts" aria-live="polite"></div>
 
-  <script src="/static/app.js?v=1.1"></script>
+  <script src="/static/app.js?v=1.3"></script>
 </body>
 </html>

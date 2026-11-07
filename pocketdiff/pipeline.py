@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 
 import cv2
 import numpy as np
+import torch
 
 from .classical import AdaptivePostProcessor, artifact_heatmap, detect_artifacts, quality_report, super_resolve
 from .classical.postprocess import Stage
@@ -26,6 +27,7 @@ class PromptRejected(ValueError):
 
 
 LARGE_OUTPUT_PX = 1536   # longer side above this: post-process at native size, super-resolve last
+DETAIL_PASS_MAX_SIDE = 1536   # diffusion detail pass works at <= 2x native and at most this long side
 OBJECT_WEIGHT = 1.0   # weight of per-object coverage relative to the whole-prompt CLIP score
 _NUM = {1: "a", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven", 8: "eight"}
 _PLURAL = {"person": "people", "mouse": "mice", "knife": "knives", "sheep": "sheep", "skis": "skis",
@@ -153,7 +155,7 @@ class PocketDiffusion:
             postprocess: str | None = None, rerank: bool = True, verify: bool = False,
             preview: bool = False, safety: bool = True, upscale_to: tuple[int, int] | None = None,
             on_step=None, semantic_rerank: bool = False, on_preview=None,
-            on_event=None) -> RunResult:
+            on_event=None, detail_pass: bool = True) -> RunResult:
         emit = on_event or (lambda name, data=None: None)
         timings: dict[str, float] = {}
         events: list[str] = []
@@ -281,17 +283,36 @@ class PocketDiffusion:
         # ---- very large outputs (2K/4K/8K): classical super-resolution as the last step, so every
         # metric above ran on the native image and no stage processes a 33-megapixel buffer
         if big_target is not None:
+            h0, w0 = final.shape[:2]
+            # 1) diffusion detail pass at 2x native (GPU, single-step SD-Turbo img2img): real new detail
+            gc = gen.config
+            if detail_pass and gc.family == "sd_turbo" and not gc.cfg and gc.device == "cuda":
+                emit("stage", {"name": "detail_pass"})
+                from .classical.resize import snap_resolution
+                rw, rh = snap_resolution(big_target[0], big_target[1], max_pixels=(2 * w0) * (2 * h0),
+                                         max_side=DETAIL_PASS_MAX_SIDE)
+                try:
+                    final, ms = self.engine.refine(final, analysis.clean_prompt, gc, (rw, rh), seed=seed)
+                    timings["detail_pass"] = ms
+                    post.stages.append(Stage("detail_pass", {"from": [w0, h0], "to": [rw, rh],
+                                                             "method": "SD-Turbo img2img, strength 0.5, 1 UNet call"},
+                                             ms, final.copy()))
+                    events.append(f"Detail pass: SD-Turbo image-to-image at {rw}x{rh} redrew fine detail "
+                                  f"({ms:.0f} ms).")
+                    h0, w0 = final.shape[:2]
+                except torch.cuda.OutOfMemoryError:
+                    torch.cuda.empty_cache()
+                    events.append("Detail pass skipped (out of GPU memory) - classical super-resolution only.")
+            # 2) classical super-resolution for the remaining factor
             emit("stage", {"name": "super_resolution", "size": list(big_target)})
             t0 = time.perf_counter()
-            h0, w0 = final.shape[:2]
             final = super_resolve(final, big_target)
             ms = (time.perf_counter() - t0) * 1000
             timings["super_resolution"] = ms
             post.stages.append(Stage("super_resolution", {"from": [w0, h0], "to": list(big_target),
                                                           "method": "IBP (<=4K) + Lanczos"}, ms, None))
             events.append(f"Output {big_target[0]}x{big_target[1]}: classical super-resolution from "
-                          f"{w0}x{h0} (x{big_target[0] / w0:.1f}) in {ms:.0f} ms - sharper, but no new "
-                          f"detail is invented.")
+                          f"{w0}x{h0} (x{big_target[0] / w0:.1f}) in {ms:.0f} ms.")
 
         return RunResult(image=final, raw_image=raw, analysis=analysis, plan=plan, config=gen.config,
                          gen=gen, candidates=cands, chosen=chosen, post_stages=post.stages,

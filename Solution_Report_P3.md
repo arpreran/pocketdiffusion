@@ -103,7 +103,7 @@ HOW TO FINISH THIS REPORT (delete this comment before submitting)
 
 <!-- TEAM-TODO -->
 > ✍️ **Team: write ~80–100 words.** Facts: classical CV is used at four points of the neural pipeline:
-> 1. Before generation: rule-based prompt parser builds a scene graph (objects, counts, colours, relations; agreement with our annotations: objects 1.00, counts 1.00, colours 0.99, relations 1.00) → prompt complexity for the planner.
+> 1. Before generation: spelling correction of words the CLIP text encoder cannot read ("ciggerate" → "cigarette": dictionary edit distance + same-prefix fallback, accepted only if the encoder knows the corrected word; user test: CLIP 22.2 → 32.6), then the rule-based prompt parser builds a scene graph (objects, counts, colours, relations; agreement with our annotations: objects 1.00, counts 1.00, colours 0.99, relations 1.00) → prompt complexity for the planner.
 > 2. Right after denoising: cheap artifact screening of every candidate (blank / NaN / exposure / cast) → bad candidates are dropped or regenerated.
 > 3. Selection: score = CLIP-B/32 + per-object coverage + 0.05·(PocketIQA − 50) − 2·artifact severity.
 > 4. After selection: severity-driven post-processing + IBP upscaling, then verification with OWLv2 boxes + HSV colour statistics + box geometry.

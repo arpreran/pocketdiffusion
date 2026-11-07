@@ -263,6 +263,9 @@ class Planner:
         mode = budget.mode
         if mode == "auto":
             lam = 1.0 - 0.7 * c          # complex prompts are allowed to spend more compute
+            # a generous budget is a request for quality: spend the slack instead of returning in
+            # 0.1 s at 384 px (budgets <= 2 s - all evaluation runs - are unchanged)
+            lam *= min(1.0, 2000.0 / max(budget.latency_ms, 1.0))
         else:
             lam = MODE_LAMBDA.get(mode, 0.9)
         post = "full" if mode in ("quality", "balanced", "auto") else "light"

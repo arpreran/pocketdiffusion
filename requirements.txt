@@ -22,3 +22,4 @@ torchmetrics==1.9.0
 tqdm==4.70.1
 transformers==5.22.1
 torch_fidelity==0.4.0
+pyspellchecker==0.8.3

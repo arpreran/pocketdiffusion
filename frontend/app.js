@@ -23,7 +23,7 @@ const SHORT = { this_gpu: "This GPU", flagship_phone: "Flagship", midrange_phone
 const TIMING_COLORS = { "analyse+plan": "#a78bfa", "gen.text_encode": "#f472b6", "gen.denoise": "#8b5cf6", "gen.decode": "#06b6d4",
   screen: "#22d3ee", rerank: "#34d399", semantic_rerank: "#10b981", postprocess: "#fbbf24", safety: "#fb7185" };
 
-const state = { sys: null, device: "this_gpu", mode: "auto", busy: false, result: null, view: "final",
+const state = { sys: null, device: "this_gpu", mode: "quality", busy: false, result: null, view: "final",
   gallery: { offset: 0, filter: "", q: "", total: 0 }, es: null, liveFrames: 0 };
 
 /* ------------------------------------------------------------------ utils */

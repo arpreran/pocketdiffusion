@@ -133,6 +133,7 @@ class PromptAnalysis:
     complexity_label: str = "simple"
     blocked_terms: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    corrections: list = field(default_factory=list)      # [[misspelled, corrected], ...]
 
     @property
     def total_instances(self) -> int:
@@ -187,9 +188,83 @@ def sanitize_prompt(prompt: str, max_chars: int = 2000) -> str:   # long-prompt 
     return prompt[:max_chars]
 
 
+_SPELL = None
+_SPELL_POOL: dict[str, list[str]] = {}
+
+
+def _edits(a: str, b: str) -> int:
+    """Levenshtein distance (small words only)."""
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1]
+
+
+def _speller():
+    global _SPELL
+    if _SPELL is None:
+        try:
+            from spellchecker import SpellChecker
+            _SPELL = SpellChecker()
+        except Exception:   # optional dependency: no correction without it
+            _SPELL = False
+    return _SPELL or None
+
+
+def correct_spelling(text: str, tokenizer=None) -> tuple[str, list[tuple[str, str]]]:
+    """Fix misspellings the text encoder cannot read ("ciggerate" -> "cigarette").
+
+    A word is only changed when (a) it is not an English dictionary word, (b) the CLIP text encoder
+    does not know it as a whole word either (so "IMAX", "anime", brand names it knows are kept),
+    and (c) the replacement IS a whole word for the encoder. Candidates: dictionary edit distance
+    <= 2, else the most similar dictionary word (difflib ratio >= 0.78). Returns (text, fixes).
+    """
+
+    sp = _speller()
+    if sp is None:
+        return text, []
+    vocab = tokenizer.get_vocab() if tokenizer is not None else None
+
+    def encoder_knows(w: str) -> bool:
+        return vocab is None or (w + "</w>") in vocab
+
+    fixes: list[tuple[str, str]] = []
+
+    def fix(m: re.Match) -> str:
+        w = m.group(0)
+        lw = w.lower()
+        if len(lw) < 4 or lw in sp or (vocab is not None and encoder_knows(lw)):
+            return w
+        c = sp.correction(lw)
+        if not c or c == lw:
+            # typos usually keep the first letters: same 3-letter prefix, <= 3 edits, most frequent word
+            key = lw[:3]
+            pool = _SPELL_POOL.get(key)
+            if pool is None:
+                pool = _SPELL_POOL[key] = [x for x in sp.word_frequency.keys() if x[:3] == key and x.isalpha()]
+            near = [(x, _edits(lw, x)) for x in pool if abs(len(x) - len(lw)) <= 2]
+            near = [(x, d) for x, d in near if d <= (4 if len(lw) >= 9 else min(3, len(lw) // 3))]
+            c = min(near, key=lambda t: (t[1], -sp.word_frequency[t[0]]))[0] if near else None
+        if not c or c == lw or not encoder_knows(c):
+            return w
+        fixes.append((w, c))
+        return c.upper() if w.isupper() else (c.capitalize() if w[0].isupper() else c)
+
+    return re.sub(r"[A-Za-z]+", fix, text), fixes
+
+
 def analyze_prompt(prompt: str, tokenizer=None) -> PromptAnalysis:
     clean = sanitize_prompt(prompt)
+    fixes: list[tuple[str, str]] = []
+    if tokenizer is not None:            # only with the encoder's vocabulary as a safety check
+        clean, fixes = correct_spelling(clean, tokenizer)
     pa = PromptAnalysis(prompt=prompt or "", clean_prompt=clean)
+    pa.corrections = [list(f) for f in fixes]
+    if fixes:
+        pa.warnings.append("Spelling corrected: " + ", ".join(f"{a} → {b}" for a, b in fixes))
     low = clean.lower()
     words = _WORD_RE.findall(low)
     pa.n_words = len(words)

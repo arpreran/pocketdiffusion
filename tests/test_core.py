@@ -233,3 +233,14 @@ def test_super_resolve_8k_shape_and_range():
 def test_snap_resolution_keeps_aspect_for_8k():
     assert snap_resolution(7680, 4320, 512 * 512) == (680, 384)    # 16:9 stays 16:9
     assert snap_resolution(3840, 2160, 384 * 384) == (512, 288)
+
+
+def test_spelling_correction_only_fixes_real_typos():
+    from pocketdiff.prompt_analyzer import analyze_prompt
+    pytest.importorskip("spellchecker")
+    tok = _clip_tokenizer()
+    pa = analyze_prompt("A boy lighting a ciggerate in a MODREN city", tokenizer=tok)
+    assert pa.corrections == [["ciggerate", "cigarette"], ["MODREN", "modern"]]
+    assert pa.clean_prompt == "A boy lighting a cigarette in a MODERN city"
+    keep = "Preran on a skyscraper rooftop, photorealistic, IMAX, ultra-detailed 8K, 35mm"
+    assert analyze_prompt(keep, tokenizer=tok).corrections == []      # names / style words untouched

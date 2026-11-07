@@ -254,3 +254,13 @@ def test_real_word_typos_fixed_only_in_context_and_characters_counted():
     assert "ANIME CHARACTER" in pa.clean_prompt and ["AMINE", "anime"] in pa.corrections
     assert [(o.name, o.count) for o in pa.objects] == [("person", 2)]
     assert analyze_prompt("an amine is a chemical compound", tokenizer=tok).corrections == []
+
+
+def test_face_pass_helpers():
+    from pocketdiff.pipeline import _feathered_blend, _mentions_people
+    base, patch = np.zeros((64, 64, 3), np.float32), np.ones((64, 64, 3), np.float32)
+    out = _feathered_blend(base, patch)
+    assert out.shape == (64, 64, 3)
+    assert out[32, 32, 0] > 0.95 and out[0, 0, 0] < 0.05          # patch in the centre, seamless edges
+    assert _mentions_people(analyze_prompt("three friends sitting at a cafe"))
+    assert not _mentions_people(analyze_prompt("a red apple on a wooden table"))

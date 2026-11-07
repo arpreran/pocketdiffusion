@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass, field
 
@@ -36,6 +37,27 @@ _NUM = {1: "a", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven"
 _PLURAL = {"person": "people", "mouse": "mice", "knife": "knives", "sheep": "sheep", "skis": "skis",
            "bus": "buses", "bench": "benches", "sandwich": "sandwiches", "wine glass": "wine glasses",
            "couch": "couches", "dining table": "tables", "toothbrush": "toothbrushes"}
+
+
+FACE_MIN_SCORE = 0.1
+_PEOPLE_WORDS = re.compile(r"\b(face|faces|portrait|selfie|headshot|person|people|man|men|woman|women|"
+                           r"boy|girl|guy|lady|child|kid|character|characters|human|humans|friends?|family|"
+                           r"couple|crowd|students?|teachers?|players?|team|soldiers?|actor|actress|doctor|chef)\b",
+                           re.I)
+
+
+def _mentions_people(analysis: PromptAnalysis) -> bool:
+    return any(o.name == "person" for o in analysis.objects) or bool(_PEOPLE_WORDS.search(analysis.clean_prompt))
+
+
+def _feathered_blend(base: np.ndarray, patch: np.ndarray) -> np.ndarray:
+    """Blend `patch` into `base` (same square size) through a soft elliptical mask."""
+    side = base.shape[0]
+    m = np.zeros((side, side), np.float32)
+    cv2.ellipse(m, (side // 2, side // 2), (int(side * 0.36), int(side * 0.43)), 0, 0, 360, 1.0, -1)
+    k = max(3, (side // 6) | 1)
+    m = cv2.GaussianBlur(m, (k, k), 0)[..., None]
+    return m * patch + (1 - m) * base
 
 
 def object_phrases(analysis: PromptAnalysis) -> list[str]:
@@ -136,6 +158,73 @@ class PocketDiffusion:
                 self._selector = self.verifier or False
         return self._selector or None
 
+    def _detail_faces(self, img: np.ndarray, prompt: str, gc: GenConfig, seed: int,
+                      drawn: bool = False) -> tuple[np.ndarray, int]:
+        """Find faces with the open-vocabulary detector and redraw each one at full resolution.
+
+        Each face box is enlarged 1.6x to a square crop, the crop is enlarged to the generator's
+        native size, SD-Turbo / LCM redraws it image-to-image (strength 0.5: the face keeps its pose,
+        position and colours, but gets proper eyes, nose and mouth), and the result is scaled back
+        and blended in with a feathered ellipse so no seam is visible.
+        """
+        if self.verifier is None or gc.cfg:
+            return img, 0
+        on_gpu = gc.device == "cuda"
+        size = 512 if on_gpu else 384
+        max_faces = 3 if on_gpu else 1
+        old_thr = self.verifier.threshold        # faces in generated images score ~0.1-0.2 with OWLv2
+        self.verifier.threshold = FACE_MIN_SCORE
+        try:
+            dets = self.verifier.detect(img, ["face"])
+        finally:
+            self.verifier.threshold = old_thr
+        h, w = img.shape[:2]
+        # largest faces first (they matter most); 20 px minimum - below that a redraw only smudges
+        dets = [d for d in dets if min(d.box[2] - d.box[0], d.box[3] - d.box[1]) >= 20]
+        dets = sorted(dets, key=lambda d: -(d.box[2] - d.box[0]) * (d.box[3] - d.box[1]))[:max_faces]
+        out = img.copy()
+        done = 0
+        for i, d in enumerate(dets):
+            x0, y0, x1, y1 = d.box
+            bw, bh = x1 - x0, y1 - y0
+            # small faces start from a blurrier enlargement -> redraw more (strength 0.75 = 3 of 4 steps)
+            strength = 0.75 if min(bw, bh) < 40 else 0.5
+            if bw * bh > 0.45 * w * h:                           # already a close-up: nothing to gain
+                continue
+            side = int(min(max(bw, bh) * 1.6, w, h))
+            cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+            sx = int(np.clip(cx - side / 2, 0, w - side))
+            sy = int(np.clip(cy - side / 2, 0, h - side))
+            crop = out[sy:sy + side, sx:sx + side]
+            # keep the image's style: a photo must not get a cartoon face and vice versa
+            style = ("detailed illustrated face, clean line art, clear eyes" if drawn else
+                     "realistic photo, detailed natural face, natural skin texture, clear eyes")
+            ref = None
+            for s in ((strength, 0.5) if strength > 0.5 else (strength,)):
+                cand, _ = self.engine.refine(crop, f"{style}, {prompt}",
+                                             gc, (size, size), strength=s, steps=4, seed=seed + 31 * i)
+                if drawn or self._looks_like_photo_face(cand):
+                    ref = cand
+                    break
+            if ref is None:          # the redraw turned a photo face into a cartoon: keep the original
+                continue
+            ref = cv2.resize(ref, (side, side), interpolation=cv2.INTER_AREA)
+            out[sy:sy + side, sx:sx + side] = _feathered_blend(crop, ref)
+            done += 1
+        return np.clip(out, 0, 1).astype(np.float32), done
+
+    def _looks_like_photo_face(self, img: np.ndarray) -> bool:
+        """CLIP style check for a redrawn face in a photo: photo-like rather than drawn."""
+        if self.scorer is None:
+            return True
+        if getattr(self, "_face_style_text", None) is None:
+            self._face_style_text = self.scorer.text_features(
+                ["a photo of a real person's face", "a cartoon drawing of a face",
+                 "an illustrated character face"])
+        f = self.scorer.image_features([img])
+        sims = (f @ self._face_style_text.T)[0].float().cpu().numpy()
+        return bool(sims[0] >= sims[1:].max())
+
     def analyze(self, prompt: str) -> PromptAnalysis:
         tok = None
         for b in self.engine.models.cache.values():
@@ -158,7 +247,7 @@ class PocketDiffusion:
             postprocess: str | None = None, rerank: bool = True, verify: bool = False,
             preview: bool = False, safety: bool = True, upscale_to: tuple[int, int] | None = None,
             on_step=None, semantic_rerank: bool = False, on_preview=None,
-            on_event=None, detail_pass: bool = True) -> RunResult:
+            on_event=None, detail_pass: bool = True, face_pass: bool = True) -> RunResult:
         emit = on_event or (lambda name, data=None: None)
         timings: dict[str, float] = {}
         events: list[str] = []
@@ -249,12 +338,35 @@ class PocketDiffusion:
             chosen = int(np.argmax([c.score for c in cands]))
         raw = cands[chosen].image
 
+        # ---- face detail pass: small faces get too few pixels for the generator to draw eyes,
+        # noses and mouths -> detect them, redraw each at full resolution, blend back
+        face_stage = None
+        # GPU: always look for faces (~40 ms); CPU: only when the prompt is about people
+        if face_pass and (gen.config.device == "cuda" or _mentions_people(analysis)):
+            emit("stage", {"name": "face_detail"})
+            t0 = time.perf_counter()
+            try:
+                raw, n_faces = self._detail_faces(raw, analysis.clean_prompt, gen.config, seed, drawn_style)
+            except torch.cuda.OutOfMemoryError:
+                torch.cuda.empty_cache()
+                n_faces = 0
+                events.append("Face detail pass skipped (out of GPU memory).")
+            ms = (time.perf_counter() - t0) * 1000
+            if n_faces:
+                timings["face_detail"] = ms
+                face_stage = Stage("face_detail", {"faces": n_faces, "method": "OWLv2 face boxes -> "
+                                                   "SD-Turbo img2img at full resolution -> feathered blend"},
+                                   ms, raw.copy())
+                events.append(f"Face detail pass: redrew {n_faces} face(s) at full resolution ({ms:.0f} ms).")
+
         emit("stage", {"name": "postprocess", "chosen": chosen})
         # ---- adaptive classical post-processing (full artifact analysis on the chosen image)
         t0 = time.perf_counter()
         pp = AdaptivePostProcessor(level=postprocess, keep_intermediates=True)
         big_target = upscale_to if upscale_to and max(upscale_to) > LARGE_OUTPUT_PX else None
         post = pp(raw, target_size=None if big_target else upscale_to, measure_after=False)
+        if face_stage is not None:
+            post.stages.insert(0, face_stage)
         timings["postprocess"] = (time.perf_counter() - t0) * 1000
         final = post.image
 

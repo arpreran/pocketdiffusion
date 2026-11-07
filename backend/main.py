@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import shutil
 import threading
 from pathlib import Path
@@ -194,6 +195,9 @@ def system():
                              "eff_tflops": p.eff_tflops, "notes": p.notes} for k, p in DEVICE_PROFILES.items()],
         "presets": [{"key": k, "description": c.description} for k, c in PRESETS.items() if k != "cpu_fallback"],
         "examples": EXAMPLES, "baseline_ms": baseline_ms(),
+        # cloud backup (Hugging Face Space, CPU only): the UI says so and points to the GPU version
+        "cloud": bool(os.environ.get("SPACE_ID")), "gpu_link": os.environ.get("POCKETDIFF_GPU_LINK", ""),
+        "default_device": "this_gpu" if gpu else "this_cpu",
     }
 
 
@@ -225,6 +229,10 @@ def generate(body: GenerateIn):
 
 @app.post("/api/compare")
 def compare(body: CompareIn):
+    if not family_available("sd15"):
+        raise HTTPException(503, "The race needs the SD1.5 baseline (50 steps, FP32), which is not installed on "
+                                 "this server - it would take minutes per image without a GPU. "
+                                 "Use the GPU version of the app for the race.")
     job = jobs.submit("compare", body.model_dump())
     return {"job_id": job.id, "queue": jobs.queue_length()}
 

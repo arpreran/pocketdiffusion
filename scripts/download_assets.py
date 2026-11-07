@@ -44,14 +44,22 @@ ASSETS = [
 ]
 
 
+CLOUD = {"madebyollin/taesd", "stabilityai/sd-turbo", "openai/clip-vit-base-patch32",
+         "google/owlv2-base-patch16-ensemble"}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--core", action="store_true", help="only assets used by the app")
+    ap.add_argument("--cloud", action="store_true",
+                    help="CPU cloud backup: SD-Turbo + TAESD + CLIP-B/32 + OWLv2 only (~3.5 GB)")
     args = ap.parse_args()
 
     failed = []
     for repo, rtype, patterns, core in ASSETS:
         if args.core and not core:
+            continue
+        if args.cloud and repo not in CLOUD:
             continue
         t0 = time.time()
         print(f"[download] {repo} ...", flush=True)

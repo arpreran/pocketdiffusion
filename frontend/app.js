@@ -71,10 +71,11 @@ async function refreshSystem(first = false) {
   try {
     const s = await api("/api/system");
     state.sys = s;
-    const gpu = s.gpu ? s.gpu.name.replace("NVIDIA GeForce ", "") : "CPU";
+    const gpu = s.gpu ? s.gpu.name.replace("NVIDIA GeForce ", "") : (s.cloud ? "Cloud CPU (no GPU, ~10-30 s/image)" : "CPU");
     const q = s.queue ? ` · queue ${s.queue}` : "";
     pill.className = "status-pill " + (s.ready ? "ok" : "");
     $("#statusText").textContent = `${gpu} · ${s.ready ? "ready" : "warming up"}${q}`;
+    if (s.gpu_link) { pill.title = `Backup copy on a free CPU server. Fast GPU version: ${s.gpu_link}`; }
     if (first) initFromSystem(s);
   } catch {
     pill.className = "status-pill bad";
@@ -82,6 +83,10 @@ async function refreshSystem(first = false) {
   }
 }
 function initFromSystem(s) {
+  if (s.default_device && s.default_device !== state.device) {   // no GPU here: plan for the CPU
+    state.device = s.default_device;
+    if (state.device === "this_cpu" && msFromSlider() < 3000) setLatency(20000);
+  }
   const dev = $("#devices");
   dev.innerHTML = s.device_profiles.map((p) => `
     <button class="device ${p.key === state.device ? "on" : ""}" data-dev="${p.key}" title="${esc(p.label)} — ${esc(p.notes)}">

@@ -16,11 +16,15 @@ values once `eval/eval_degradation.py` and `eval/bench_efficiency.py` have writt
 from __future__ import annotations
 
 import math
-from dataclasses import asdict, dataclass, field
+import os
+from dataclasses import asdict, dataclass, field, replace
 from functools import lru_cache
 
 from .config import DEVICE_PROFILES, DISTILLED_TE_DIR, MODEL_IDS, DeviceProfile, GenConfig, load_calibration
 from .prompt_analyzer import PromptAnalysis
+from .utils import cuda_available
+
+CPU_SCALE = float(os.environ.get("POCKETDIFF_CPU_SCALE", "1.0"))
 
 # ----------------------------------------------------------------------------- priors
 PARAMS_M = {  # millions of parameters (used for memory prediction)
@@ -200,7 +204,9 @@ class Planner:
         post_ms = 0.0 if post == "off" else self.p["post_ms_512"] * px * (0.6 if post == "light" else 1.0)
         total = self.p["text_ms"] + evals * unet + dec + rerank + post_ms
         if device == "cpu":
-            total = (total - post_ms) * self.p["cpu_slowdown"] + post_ms
+            # POCKETDIFF_CPU_SCALE: how much slower this CPU is than the one the table was measured on
+            # (e.g. 4 for a 2-vCPU cloud server vs the 10-thread laptop CPU)
+            total = (total - post_ms) * self.p["cpu_slowdown"] * CPU_SCALE + post_ms
         return total
 
     def predict_memory(self, family: str, res: int, quant: str, te: str, vae: str, n: int,
@@ -248,6 +254,9 @@ class Planner:
 
     def plan(self, analysis: PromptAnalysis, budget: Budget) -> Plan:
         prof = DEVICE_PROFILES.get(budget.device_profile, DEVICE_PROFILES["this_gpu"])
+        if prof.run_device == "cuda" and not cuda_available():
+            # no GPU on this machine (e.g. the cloud backup): plan for what really runs - the CPU
+            prof = DEVICE_PROFILES["this_cpu"] if prof.key == "this_gpu" else replace(prof, run_device="cpu")
         mem_budget = budget.memory_mb or prof.memory_budget_mb
         run_device = prof.run_device
         c = analysis.complexity

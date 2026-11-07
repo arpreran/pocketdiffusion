@@ -1,4 +1,10 @@
 {
-  "team_id": "TXX",
-  "usns": ["USN1", "USN2", "USN3", "USN4"]
+  "team_id": "33",
+  "team_name": "VisionForge",
+  "members": [
+    {"name": "Preran A R", "usn": "1RUA24CSE0332"},
+    {"name": "Punith Anand", "usn": "1RUA24CSE0341"},
+    {"name": "Rohan Raj", "usn": "1RUA24CSE0373"}
+  ],
+  "usns": ["1RUA24CSE0332", "1RUA24CSE0341", "1RUA24CSE0373"]
 }

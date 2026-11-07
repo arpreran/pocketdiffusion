@@ -1,6 +1,6 @@
-USN1,USN2,USN3,USN4
+1RUA24CSE0332,1RUA24CSE0341,1RUA24CSE0373
 
-# Evaluation – P3 Resource-Efficient Text-to-Image Generation (Team TXX)
+# Evaluation – P3 Resource-Efficient Text-to-Image Generation (Team 33)
 
 Hardware: NVIDIA GeForce RTX 4060 Laptop GPU · PyTorch 2.14.1+cu126 · measured 2026-11-06 20:08.  
 Test set: 200 unseen MS-COCO (Karpathy *test*) captions, one image per prompt, identical seeds for every system. Planner calibrated on the separate *validation* split.

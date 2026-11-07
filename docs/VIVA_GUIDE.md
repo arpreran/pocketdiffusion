@@ -1,14 +1,14 @@
 # Viva & demo preparation (internal – not part of the report)
 
 Demo and viva are worth 25 points; every member must explain *their own part*, the model and
-classical choices, the metrics and a failure case. Suggested split for 4 members:
+classical choices, the metrics and a failure case. Team VisionForge (33): Preran A R, Punith Anand,
+Rohan Raj - suggested split into 3 parts (decide together who takes which):
 
-| Member | Owns | Files to know line by line |
+| Part | Owns | Files to know line by line |
 |---|---|---|
-| 1 | Diffusion engine & optimisation (FP16, LCM-LoRA, SD-Turbo, TAESD, INT8/INT4, pruning) | `engine.py`, `optimizations.py`, `config.py` |
-| 2 | Adaptive planner, fallback, device profiles, text-encoder distillation | `planner.py`, `scripts/distill_text_encoder.py` |
-| 3 | Classical CV: artifacts, post-processing, guided filter, IBP, NIQE | `classical/*` |
-| 4 | Evaluation & app: CLIP/FID/KID, compositional F1 (OWLv2), ablation, Gradio UI | `eval/*`, `verifier.py`, `scoring.py`, `app.py` |
+| A | Diffusion engine & optimisation (FP16, LCM-LoRA, SD-Turbo, TAESD, INT8/INT4, pruning), long-prompt encoding, 8K detail pass, adaptive planner, fallback, device profiles, text-encoder distillation | `engine.py`, `optimizations.py`, `planner.py`, `config.py`, `scripts/distill_text_encoder.py` |
+| B | Classical CV: artifacts, post-processing, guided filter, IBP / 8K super-resolution, NIQE; spelling correction and prompt parsing; face detail pass | `classical/*`, `prompt_analyzer.py`, `pipeline.py` (face pass) |
+| C | Evaluation & full-stack app: CLIP/FID/KID, compositional F1 (OWLv2), ablation; FastAPI + SQLite + web UI; deployment (tunnel, GitHub Pages page, Modal cloud copy) | `eval/*`, `verifier.py`, `scoring.py`, `backend/*`, `frontend/*`, `serve.py`, `deploy/*` |
 
 ## 3-minute demo script
 1. *(20 s)* Problem: SD1.5 needs 50 steps × 2 (CFG) = 102 UNet calls and ~4 GB FP32 weights → impossible on a phone.

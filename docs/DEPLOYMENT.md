@@ -14,6 +14,12 @@ run.bat --share
 * Keep the laptop plugged in, disable sleep, and keep the terminal open during judging.
   **Every restart gives a new URL**: update the report and the submission if that happens.
 * The models are pre-loaded and warmed up at start, so the first judge request is fast.
+* **Auto-reconnect:** switching Wi-Fi or a short sleep drops the tunnel (`gradio.live` then answers 404
+  although the app runs). `serve.py` checks its own public URL every minute and, after two failed
+  checks, opens a new tunnel. **The URL changes when that happens**: the console prints
+  `THE LINK CHANGED: old -> new`, and the current link is always in `data/live_url.txt`.
+* So during judging: stay on one network, keep the laptop plugged in, and set Windows to never
+  sleep when plugged in (Settings > System > Power > Screen and sleep).
 
 **If no URL appears** (`lookup gradio-live.com: i/o timeout`): the tunnel client's DNS lookup
 fails on some phone hotspots. `serve.py` retries 6 times and cycles through three strategies:

@@ -73,10 +73,14 @@ def _tunnel_with_config(port: int, strategy: str) -> str:
             pass
 
 
-def open_tunnel(port: int, attempts: int = 6) -> None:
+LIVE_URL_FILE = Path(__file__).resolve().parent / "data" / "live_url.txt"
+
+
+def open_tunnel(port: int, attempts: int = 6) -> str | None:
     """Expose the local server through Gradio's share relay (same mechanism as gradio --share).
 
     Retries with back-off and cycles through: Gradio's default client, connect-by-IP, public DNS.
+    Returns the public URL (also written to data/live_url.txt) or None.
     """
     from gradio.networking import setup_tunnel
     strategies = ["default", "ip", "dns"]
@@ -89,13 +93,58 @@ def open_tunnel(port: int, attempts: int = 6) -> None:
                 url = _tunnel_with_config(port, strategy)
             bar = "=" * (len(url) + 22)
             print(f"\n{bar}\n  PUBLIC URL:  {url}\n{bar}\n  (valid while this process runs)\n", flush=True)
-            return
+            try:
+                LIVE_URL_FILE.parent.mkdir(parents=True, exist_ok=True)
+                LIVE_URL_FILE.write_text(f"{url}\n{time.strftime('%Y-%m-%d %H:%M:%S')}\n", encoding="utf-8")
+            except OSError:
+                pass
+            return url
         except Exception as e:  # tunnel is optional - the local server keeps working
             msg = str(e).strip().splitlines()[-1][:160] if str(e).strip() else type(e).__name__
             print(f"[share] attempt {i}/{attempts} ({strategy}) failed: {msg}", flush=True)
             time.sleep(3 * i)
-    print("[share] no public link - the app still runs locally. Check the internet connection and restart.",
-          flush=True)
+    print("[share] no public link right now - the app still runs locally; retrying in a minute.", flush=True)
+    return None
+
+
+def _public_ok(url: str) -> bool:
+    import httpx
+    try:
+        return httpx.get(url.rstrip("/") + "/api/system", timeout=20).status_code == 200
+    except Exception:
+        return False
+
+
+def keep_tunnel_alive(port: int, interval: float = 60.0) -> None:
+    """Open the public link and keep it alive.
+
+    The relay drops the link when the laptop switches network or sleeps (gradio.live then answers
+    404 although the local server is fine). Every minute the public URL is checked from outside;
+    after two failed checks in a row the old tunnel is closed and a new one opened (new URL, printed
+    in the box and written to data/live_url.txt).
+    """
+    from gradio import tunneling
+    url = open_tunnel(port)
+    fails = 0
+    while True:
+        time.sleep(interval)
+        if url and _public_ok(url):
+            fails = 0
+            continue
+        fails += 1
+        if url and fails < 2:
+            continue
+        print(f"[share] public link {url or '-'} is not reachable - reconnecting ...", flush=True)
+        for t in list(tunneling.CURRENT_TUNNELS):
+            try:
+                t.kill()
+            except Exception:
+                pass
+        tunneling.CURRENT_TUNNELS.clear()
+        new = open_tunnel(port)
+        if new and url and new != url:
+            print(f"[share] THE LINK CHANGED: {url} -> {new}  (send the new one)", flush=True)
+        url, fails = new, 0
 
 
 def main() -> None:
@@ -113,7 +162,7 @@ def main() -> None:
     if not args.no_warmup:
         jobs.submit("warmup", {})
     if args.share:
-        threading.Thread(target=lambda: (time.sleep(2), open_tunnel(args.port)), daemon=True).start()
+        threading.Thread(target=lambda: (time.sleep(2), keep_tunnel_alive(args.port)), daemon=True).start()
     print(f"PocketDiffusion -> http://127.0.0.1:{args.port}", flush=True)
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
 

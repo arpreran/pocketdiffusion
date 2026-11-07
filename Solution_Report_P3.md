@@ -1,13 +1,8 @@
 <!--
-HOW TO FINISH THIS REPORT (delete this comment before submitting)
-1. Every block between TEAM-TODO markers is a placeholder. Replace the whole block (markers included)
-   with your own paragraph. The bullets are facts from our measurements to help you, not text to copy.
-2. Blocks between AI-DRAFTED markers were drafted by Claude and are declared in section 6.
-   Keep the markers while the text stays AI-written; if you rewrite a block yourself, remove its markers.
-3. Header table: filled (VisionForge, Team 33).
-4. Check the AI share and leftover placeholders before submitting:
-       python scripts/ai_share.py Solution_Report_P3.md        (must say PASS, i.e. <= 30 %)
-5. Every number below comes from eval_P3_<TeamID>.md / results/*.json (reproducible: python -m eval.run_all).
+NOTE (delete before submitting): the prose of this report is AI-drafted and declared as such in
+section 6 (measured AI share: python scripts/ai_share.py Solution_Report_P3.md). Keep the AI-DRAFTED
+markers and the declaration accurate. Still to do: fill the team-contribution table in section 6
+and the evaluated commit hash in the header, then: python scripts/build_report_pdf.py --final
 -->
 
 # Hackathon Technical Solution Report
@@ -27,21 +22,15 @@ HOW TO FINISH THIS REPORT (delete this comment before submitting)
 
 - **Core Technical Challenge:**
 
-<!-- TEAM-TODO -->
-> ✍️ **Team: write ~80–100 words in your own words.** Facts to cover:
-> - Baseline Stable Diffusion v1.5: 1.07 B parameters, 4.07 GB of FP32 weights, 102 UNet evaluations per image (50 PNDM steps + 1, ×2 for classifier-free guidance), 84.5 TFLOPs per image → 13.3 s and 5.1 GB peak GPU memory on our RTX 4060 laptop. A phone has ~1–3 GB for one app and 0.3–4 TFLOPS.
-> - Failure modes we target: (a) quality loss when steps / precision / resolution are cut (blur, 8-px grid, colour casts, clipping); (b) semantic failures on complex prompts (missing objects, wrong counts, colour leaking between objects, wrong left/right); (c) out-of-memory or missed deadline on weak devices.
-> - Constraints: per-request latency budget (default 2 s), device memory budget (6.5 GB GPU down to 1.1 GB low-end phone), no public text-to-image API allowed.
-<!-- /TEAM-TODO -->
+<!-- AI-DRAFTED -->
+Stable Diffusion v1.5, our baseline, needs 102 UNet evaluations per image (50 PNDM steps plus one, doubled by classifier-free guidance), about 84.5 TFLOPs and 4.07 GB of FP32 weights. On our RTX 4060 laptop GPU one 512×512 image takes 13.3 s and 5.1 GB of peak memory, while a phone offers an app roughly 1–3 GB of memory and 0.3–4 TFLOPS. Simply cutting steps, precision or resolution causes three kinds of failure that we target: visual degradation (blur, 8-pixel decoder grids, colour casts, clipped highlights), semantic failure on complex prompts (missing objects, wrong counts, colours attached to the wrong object, ignored spatial relations) and run-time failure on weak devices (out-of-memory errors or missed deadlines). Our constraints are a per-request latency budget (2 s by default), a device memory budget between 6.5 GB and 1.1 GB, and no external text-to-image API.
+<!-- /AI-DRAFTED -->
 
 - **Proposed Methodology:**
 
-<!-- TEAM-TODO -->
-> ✍️ **Team: write 2–3 sentences (the template asks for this length).** Facts to cover:
-> - Not one compressed model but a budget-aware planner: per prompt it reads prompt complexity + device budget, enumerates ~700 configurations (model family × steps × resolution × decoder × precision × text encoder × number of candidates) and picks the best predicted quality that fits.
-> - A custom denoising loop executes the plan (anytime output, deadline early-exit, out-of-memory fallback); classical CV screens, repairs and verifies the result.
-> - Why not static: no single configuration is best for every prompt and device. Measured: adaptive auto mode beats the best static fast configuration on CLIP (26.72 vs 26.27) and FID (147.4 vs 150.3) while staying 86× faster than the baseline.
-<!-- /TEAM-TODO -->
+<!-- AI-DRAFTED -->
+Instead of shipping one compressed model, PocketDiffusion plans every request: it analyses the prompt, enumerates about 700 configurations (model family, steps, resolution, decoder, weight precision, text encoder and number of candidates) and selects the one with the best predicted quality that fits the device's latency and memory budget. A custom denoising loop executes the plan with deadline-aware early exit and an out-of-memory fallback chain, and classical computer vision screens, repairs and verifies the output. We chose this over a static setting because no single configuration is best for every prompt and device: the adaptive system reaches CLIP 26.72 and FID 147.4, better than the best static fast configuration (26.27 and 150.3), while being 86× faster than the baseline.
+<!-- /AI-DRAFTED -->
 
 ---
 
@@ -53,74 +42,43 @@ HOW TO FINISH THIS REPORT (delete this comment before submitting)
 
 - **Algorithms Utilized:**
 
-<!-- TEAM-TODO -->
-> ✍️ **Team: write ~80–100 words.** Facts (all implemented by us with NumPy/OpenCV primitives in `pocketdiff/classical/`):
-> - Artifact detection (`artifacts.py`): blank/NaN, clipped highlights, crushed shadows, Lab colour-cast factor K, dynamic range, over-saturation, Immerkær noise σ, 8-px periodic grid (FFT peak score), Laplacian blur → severities in [0, 1].
-> - Correction (`enhance.py`, `filters.py`): FFT notch filter for the grid, guided-filter (He et al.) edge-aware denoising, shades-of-grey white balance (p = 6), adaptive gamma, CLAHE on L*, saturation soft-knee, guided-filter base/detail sharpening with an edge mask (no halos).
-> - Resolution (`resize.py`): snapping to multiples of 8 under a pixel budget (keeps the aspect ratio, e.g. 8K 16:9 → 680×384 native); iterative back-projection (IBP) super-resolution when the planner generates at 384 px.
-> - Large outputs: "8K"/"4K" in a prompt are only style words for the model, so the app maps them to an output size reached classically: first a diffusion detail pass (the image is enlarged 2× to 1360×768 and SD-Turbo runs one image-to-image step at strength 0.5, ~0.3–1.8 s on the GPU, so the UNet redraws real fine detail while the composition is kept), then IBP super-resolution up to 4K + Lanczos to 8K (~2–4 s on the CPU). Whole 8K generation ≈ 5 s. The page shows a 2048-px preview; the 8K file is the download.
-> - Quality assessment (`iqa.py`): NIQE written from scratch (MSCN, GGD/AGGD fits, 36 features, MVG distance), pristine model fitted on 120 real COCO validation photos; PocketIQA composite score.
-<!-- /TEAM-TODO -->
+<!-- AI-DRAFTED -->
+All classical stages are implemented with NumPy and OpenCV primitives in `pocketdiff/classical/`. An artifact detector measures blank or NaN output, clipped highlights, crushed shadows, a Lab colour-cast factor, dynamic range, over-saturation, Immerkær noise, an FFT-based 8-pixel grid score and Laplacian blur, each mapped to a severity between 0 and 1. The corrections are an FFT notch filter for grids, guided-filter edge-aware denoising, shades-of-grey white balance, adaptive gamma, CLAHE on the L channel, a saturation soft knee and halo-free base/detail sharpening with an edge mask. Resolution handling snaps sizes to multiples of eight under a pixel budget and enlarges images with iterative back-projection (IBP), which we extended to 2K, 4K and 8K output. Image quality is assessed with our own NIQE implementation, fitted on 120 COCO validation photographs, and a PocketIQA composite score.
+<!-- /AI-DRAFTED -->
 
 - **Adaptive Selection Logic:**
 
-<!-- TEAM-TODO -->
-> ✍️ **Team: write ~70–90 words.** Facts:
-> - A stage runs only when its detector fires, and its strength scales with the measured severity: white-balance strength ∝ cast factor K, denoise radius/ε from σ_noise, gamma from mean luminance (target 0.46), CLAHE clip limit from dynamic range, notch filter only above the FFT grid-score threshold.
-> - Thresholds were tuned on the validation split, never on the test split (example: the denoise threshold was raised after it worsened NIQE on validation).
-> - Measured trigger rates on real outputs: sharpen 100 %, white balance 23 %, adaptive gamma 5 %, denoise 1 %, saturation knee 1 %, grid notch 0 %, CLAHE 0 %.
-<!-- /TEAM-TODO -->
+<!-- AI-DRAFTED -->
+Every correction is conditional and proportional. A stage runs only when its detector fires, and its strength follows the measured severity: the white-balance strength grows with the cast factor, the denoising radius and regularisation follow the estimated noise level, gamma is derived from the mean luminance with a target of 0.46, the CLAHE clip limit grows as the dynamic range shrinks, and the notch filter is applied only above the grid-score threshold. All thresholds were tuned on the validation split and never on the test split; for example, the denoising threshold was raised after it worsened NIQE on validation images. On real outputs, sharpening fired on every image, white balance on 23 %, adaptive gamma on 5 % and denoising on 1 %.
+<!-- /AI-DRAFTED -->
 
 ### 2.2 Deep Learning Pipeline
 
 - **Model Architecture:**
 
-<!-- TEAM-TODO -->
-> ✍️ **Team: write ~90–110 words.** Facts:
-> - Baseline: Stable Diffusion v1.5 (UNet 859.5 M, CLIP ViT-L text encoder 123.1 M, VAE decoder 83.7 M parameters).
-> - Optimised families: SD1.5 + LCM-LoRA (latent consistency distillation; we fuse the LoRA into the weights, so it costs nothing at run time; 2–8 steps, no CFG) and SD-Turbo (adversarial diffusion distillation, 1 step).
-> - TAESD tiny decoder: 2.45 M vs 83.7 M parameters, 14 ms vs 146 ms decode.
-> - Our own weight-only quantisation: INT8 per output channel, INT4 in groups of 64 with two values per byte (relative weight error 1.1 % / 11.8 %).
-> - Our own denoising loop (`pocketdiff/engine.py`), checked against the diffusers reference (`scripts/smoke_test.py`).
-> - Prompt encoding for long prompts: CLIP reads only 77 tokens, so longer prompts are split into chunks of ≤ 75 tokens (cut at commas), each chunk is encoded separately and the embeddings are concatenated (77 → 154 → 231 tokens; up to 225 prompt tokens). The UNet cross-attention accepts the longer sequence; for CFG the negative prompt is padded to the same number of chunks. Prompts ≤ 75 tokens give exactly the same encoding as before (unit-tested).
-> - Rationale: 98 % of the baseline time is the UNet (13,026 of 13,307 ms), so cutting UNet calls from 102 to 1–4 by distillation is the biggest lever.
-> - Helper models (not generators): CLIP ViT-B/32 for re-ranking and the safety check, OWL-ViT v1 for semantic re-ranking; CLIP ViT-L/14 and OWLv2 are used **only for evaluation** (different models, so we never optimise the metric we report).
-<!-- /TEAM-TODO -->
+<!-- AI-DRAFTED -->
+The baseline is Stable Diffusion v1.5 (UNet 859.5 M, CLIP ViT-L text encoder 123.1 M and VAE decoder 83.7 M parameters). Because 98 % of its 13.3 s is spent in the UNet, our main lever is reducing UNet calls through distilled models: SD1.5 with LCM-LoRA (consistency distillation, 2–8 steps, with the LoRA fused into the weights so it adds no run-time cost) and SD-Turbo (adversarial diffusion distillation, one step). The tiny TAESD decoder (2.45 M parameters) replaces the VAE decoder and cuts decoding from 146 ms to 14 ms, and our own INT8 (per output channel) and INT4 (groups of 64) weight-only quantisation reduces memory. The models run in our own denoising loop, validated against the diffusers reference, and prompts longer than CLIP's 77-token limit are encoded in 75-token chunks so that no words are lost. CLIP ViT-B/32 and OWL-ViT are used only for re-ranking, while CLIP ViT-L/14 and OWLv2 are reserved for evaluation so that we never optimise the metric we report.
+<!-- /AI-DRAFTED -->
 
 - **Loss Functions & Training:**
 
-<!-- TEAM-TODO -->
-> ✍️ **Team: write ~80–100 words.** Facts:
-> - Trained by us: a 6-layer student text encoder (keeps layers 0, 2, 4, 7, 9, 11 of the 12-layer CLIP-L encoder; 123.1 M → 80.5 M parameters). Knowledge distillation loss = MSE + cosine on all 77 token hidden states. Trained on 400,171 MS-COCO *train* captions, early-stopped on *validation* captions: validation MSE 0.987 → 0.098, token cosine 0.950, 11.2 min on the RTX 4060. Effect on the test split: CLIP 25.23 → 25.21, 81 MB less memory.
-> - Calibrated on data (no gradient training): the planner's quality model (CLIP change per configuration, measured on 100 validation prompts, with physical clamps) and the NIQE pristine model.
-> - Pretrained and not retrained: SD1.5, LCM-LoRA, SD-Turbo, TAESD (original losses: noise-prediction MSE, consistency distillation, adversarial + distillation loss).
-> - Data: MS-COCO 2014 Karpathy split (`yerevann/coco-karpathy` on Hugging Face; photos from `images.cocodataset.org`). Train → distillation, validation → calibration, test (200 prompts) → every reported number. No overlap between splits.
-<!-- /TEAM-TODO -->
+<!-- AI-DRAFTED -->
+We trained a 6-layer student text encoder by knowledge distillation from the 12-layer CLIP text encoder of SD1.5, keeping layers 0, 2, 4, 7, 9 and 11 (123.1 M → 80.5 M parameters). The loss is the mean squared error plus a cosine term over all 77 token hidden states. Training used 400,171 MS-COCO train captions with early stopping on validation captions: the validation MSE fell from 0.987 to 0.098, the token cosine similarity reached 0.950, and training took 11.2 minutes on the RTX 4060. On the test split the student changes CLIP only from 25.23 to 25.21 while saving 81 MB of memory. The planner's quality model and the NIQE pristine model were calibrated on the validation split without gradient training, and the generators themselves (SD1.5, LCM-LoRA, SD-Turbo and TAESD) were used as pretrained models. All data come from the MS-COCO 2014 Karpathy split, with the train, validation and test sets kept strictly separate.
+<!-- /AI-DRAFTED -->
 
 ### 2.3 Hybrid Integration & Adaptive Mechanism
 
 - **Fusion Strategy:**
 
-<!-- TEAM-TODO -->
-> ✍️ **Team: write ~80–100 words.** Facts: classical CV is used at four points of the neural pipeline:
-> 1. Before generation: spelling correction of words the CLIP text encoder cannot read ("ciggerate" → "cigarette": dictionary edit distance + same-prefix fallback, accepted only if the encoder knows the corrected word; user test: CLIP 22.2 → 32.6), then the rule-based prompt parser builds a scene graph (objects, counts, colours, relations; agreement with our annotations: objects 1.00, counts 1.00, colours 0.99, relations 1.00) → prompt complexity for the planner.
-> 2. Right after denoising: cheap artifact screening of every candidate (blank / NaN / exposure / cast) → bad candidates are dropped or regenerated.
-> 2b. Face detail pass (after selection): OWLv2 finds faces ('face' query, score ≥ 0.1, ≥ 20 px), each face crop (1.6× box) is enlarged to 512 px and redrawn by SD-Turbo image-to-image (strength 0.5, 0.75 for faces < 40 px), checked by CLIP for style (a photo face must not turn into a cartoon - else retried gently or kept), and blended back through a feathered ellipse; ~0.25 s per face on the GPU. Broken/smeared small faces become coherent.
-> 3. Selection: score = CLIP-B/32 + per-object coverage + 0.05·(PocketIQA − 50) − 2·artifact severity.
-> 4. After selection: severity-driven post-processing + IBP upscaling, then verification with OWLv2 boxes + HSV colour statistics + box geometry.
-> - The artifact heat-map and the x0 estimate after every denoising step are shown in the UI (Figure 3).
-<!-- /TEAM-TODO -->
+<!-- AI-DRAFTED -->
+Classical processing and the neural generator are interleaved at several points. Before generation, misspellings that the text encoder cannot read are corrected (for example "ciggerate" becomes "cigarette"), and a rule-based parser builds a scene graph of objects, counts, colours and relations that sets the prompt complexity for the planner. Directly after denoising, cheap artifact screening rejects blank, NaN or badly exposed candidates. The surviving candidates are re-ranked by a score that combines CLIP-B/32 similarity, per-object coverage, PocketIQA and a penalty for artifact severity. The chosen image then receives a face detail pass, which detects faces and redraws them at full resolution, followed by severity-driven post-processing, IBP or 8K super-resolution, and a verification step based on OWLv2 boxes, HSV colour statistics and box geometry.
+<!-- /AI-DRAFTED -->
 
 - **Decision Logic:**
 
-<!-- TEAM-TODO -->
-> ✍️ **Team: write ~90–110 words.** Facts:
-> - Utility = predicted CLIP − λ·log2(latency / 100 ms), with λ = 1.0 − 0.7·c (c = prompt complexity, 0…1): simple prompts get the cheapest plan, complex prompts are allowed more compute.
-> - Predicted re-ranking gain grows with the number of checkable constraints (objects + colours + counts + relations), so multi-object prompts get 4 candidates.
-> - Latency predicted from a measured UNet time table (resolution × batch) + decode + post-processing; memory = weights × bytes per precision + measured activations.
-> - Hard limits: the plan must fit both budgets; if nothing fits → fastest plan that fits memory. At run time: deadline early-exit returns the current x0 estimate instead of failing; out-of-memory → fewer candidates → 384 px → TAESD → INT8 → 256 px → CPU.
-> - Planner decisions per device (eval file §8): this GPU → SD-Turbo 512 px, N = 4; flagship phone → SD-Turbo 384 px INT8; low-end phone → SD1.5 + LCM 2 steps, 256 px, INT8, 6-layer text encoder (1,090 MB predicted).
-<!-- /TEAM-TODO -->
+<!-- AI-DRAFTED -->
+The planner maximises a utility equal to the predicted CLIP score minus λ·log2(latency / 100 ms). In auto mode λ = 1 − 0.7c, where c is the prompt complexity, so simple prompts receive the cheapest adequate plan while complex prompts may spend more compute; a generous latency budget lowers λ further so that spare time is spent on quality. The predicted gain from re-ranking grows with the number of checkable constraints, which gives multi-object prompts several candidates. Latency is predicted from a measured table of UNet times by resolution and batch size, and memory from the weight size and measured activations. If no plan fits both budgets, the fastest plan that fits memory is used; at run time the system exits early with the current estimate, or falls back to fewer candidates, a smaller resolution, INT8 weights or the CPU when memory runs out. In practice the laptop GPU receives SD-Turbo at 512 px with four candidates, whereas the low-end phone profile receives SD1.5 with LCM at 256 px, INT8 weights and the 6-layer text encoder.
+<!-- /AI-DRAFTED -->
 
 ---
 
@@ -164,12 +122,9 @@ PSNR and SSIM need a ground-truth image, which a text prompt does not have, so w
 
 - **Analysis:**
 
-<!-- TEAM-TODO -->
-> ✍️ **Team: write 2–3 sentences** about the trade-offs. Facts to use:
-> - Speed: 13.3 s → 155 ms generation (86×); the biggest single gain is distillation (102 → 4 or 1 UNet calls), FP16 gives 2.6×, TAESD removes ~130 ms of decoding.
-> - Memory: INT8 saves 40 % of peak memory but is *slower* on the GPU (366 vs 257 ms: weights are de-quantised on the fly, no INT8 kernels), so the planner uses it only when memory forces it.
-> - Quality: LCM 4 steps costs −1.2 CLIP; SD-Turbo costs almost nothing (−0.16); the hybrid system gets the best CLIP, FID, NIQE and artifact rate of all rows because re-ranking + classical repair recover quality. Price: 291 ms end-to-end vs 85 ms for the bare model.
-<!-- /TEAM-TODO -->
+<!-- AI-DRAFTED -->
+The optimisations reduce generation time from 13.3 s to 155 ms (86×). Distillation gives the largest single gain by reducing 102 UNet calls to between one and four, FP16 contributes 2.6×, and TAESD removes about 130 ms of decoding. INT8 lowers peak memory by about 40 % but is slower on the GPU (366 ms against 257 ms) because the weights are de-quantised on the fly, so the planner uses it only when memory requires it. LCM with four steps costs 1.2 CLIP points whereas SD-Turbo costs almost nothing, and the complete hybrid system achieves the best CLIP, FID, NIQE and artifact rate of all variants, at the price of 291 ms end-to-end instead of 85 ms for the bare model.
+<!-- /AI-DRAFTED -->
 
 ### 3.2 Visual Outputs & Intermediate Representations
 
@@ -292,14 +247,9 @@ PSNR and SSIM need a ground-truth image, which a text prompt does not have, so w
 | + semantic re-ranking, N = 4 | 0.956 | 0.66 | 0.42 | 0.70 | 0.66 | 485 |
 | + semantic re-ranking, N = 8 | 0.959 | 0.77 | 0.50 | 0.79 | 0.77 | 877 |
 
-<!-- TEAM-TODO -->
-> ✍️ **Team: write ~90–120 words** interpreting the ablation. Points to explain:
-> - The planner gives the largest CLIP gain (+0.57 over one fixed configuration); re-ranking adds +0.35 but costs 136 ms (305 vs 169 ms); complexity adaptation adds +0.33.
-> - Post-processing does not change CLIP (it is not supposed to) but cuts the artifact rate 3× (0.21 → 0.07); white balance does most of that work.
-> - Honest observation: removing re-ranking gives a *lower* (better) NIQE (3.75 vs 3.85): CLIP prefers detailed, high-contrast candidates that NIQE scores as less natural.
-> - IBP upscaling makes 384 px generation look like native 512 px (NIQE 3.83 vs 3.78) while saving 22 ms of GPU time, but IBP itself costs 54 ms on the CPU.
-> - Object F1 saturates at ~0.96; the stricter all-constraints rate keeps improving with more candidates.
-<!-- /TEAM-TODO -->
+<!-- AI-DRAFTED -->
+Removing components one at a time shows that each of them contributes. The planner gives the largest quality gain (+0.57 CLIP compared with one fixed configuration), best-of-N re-ranking adds +0.35 CLIP at a cost of 136 ms, and prompt-complexity adaptation adds +0.33. Classical post-processing does not change CLIP, as intended, but reduces the artifact rate from 0.21 to 0.07, with white balance responsible for most of the reduction. Re-ranking slightly raises NIQE (3.85 against 3.75) because CLIP prefers detailed, high-contrast candidates. IBP upscaling from 384 px reaches a NIQE of 3.83, close to native 512 px generation (3.78) and far better than bicubic interpolation (5.00). On complex prompts the object F1 saturates near 0.96, while the stricter all-constraints rate keeps rising with semantic re-ranking, from 59 % to 77 %.
+<!-- /AI-DRAFTED -->
 
 ---
 
@@ -323,20 +273,21 @@ PSNR and SSIM need a ground-truth image, which a text prompt does not have, so w
 
 - **Observed Failure Case + Root Cause & Mitigation:**
 
-<!-- TEAM-TODO -->
-> ✍️ **Team: for at least three of the rows above write ~50–70 words each: the technical cause and a fix.** Facts:
-> - F1: the CLIP text encoder has almost no notion of number ("three" ≈ "some"), and 1-step models cannot correct the object layout later. Mitigation: count-aware re-ranking with a detector (counting all-constraints 50 % → 63 % with N = 8), layout / box-guided generation (GLIGEN-style).
-> - F2: cross-attention gets a single text embedding in which adjectives leak between nouns ("red" and "blue" are mixed). Mitigation: Attend-and-Excite style attention guidance, regional prompts per object, semantic re-ranking (colour-binding 25 % → 50 % with N = 8).
-> - F3: conditioning is close to a bag of words; "left of" barely changes the embedding. Mitigation: layout planning + box conditioning; semantic re-ranking (spatial 45 % → 85 % with N = 8).
-> - F4: unstructured pruning without fine-tuning removes weights the network relies on and gives no speed-up on dense GPUs; SD1.5 was trained at 512 px, so a 32×32 latent is out of distribution. Mitigation: structured pruning + distillation (BK-SDM), the planner never uses pruning and prefers SD-Turbo when it must go to 256 px (CLIP 24.44).
-> - F5: detector-based metrics inherit detector errors; about half of the remaining misses are evaluator errors. Mitigation: calibrate the detector threshold on real COCO photos with ground-truth boxes (separate data, never the test results).
-<!-- /TEAM-TODO -->
+<!-- AI-DRAFTED -->
+**F1 – counting.** The CLIP text encoder represents numbers poorly, so "three apples" is close to "some apples", and a one-step model cannot correct its layout afterwards. Count-aware re-ranking with a detector raises the counting success rate from 50 % to 63 % with eight candidates; box-guided layout generation would address the problem at its source.
+
+**F2 – attribute binding.** Cross-attention receives a single text embedding in which adjectives leak between nouns, so "blue" ended up on the cup instead of the book. Per-object regional prompts or attention guidance such as Attend-and-Excite are the natural fixes, and semantic re-ranking already raises colour-binding success from 25 % to 50 %.
+
+**F3 – spatial relations.** The conditioning behaves almost like a bag of words in which "left of" barely changes the embedding. Layout planning with box conditioning would fix this; semantic re-ranking already raises spatial accuracy from 45 % to 85 %.
+
+**F4 – compression.** 50 % unstructured magnitude pruning without fine-tuning collapses CLIP from 25.23 to 13.76 because it removes weights the network relies on, and SD1.5 at 256 px falls to 15.22 because a 32×32 latent lies outside its training distribution. Structured pruning with distillation is the better route; our planner never uses pruning and prefers SD-Turbo when it must go to 256 px.
+<!-- /AI-DRAFTED -->
 
 - **Limitations:**
 
-<!-- TEAM-TODO -->
-> ✍️ **Team: write ~50–70 words.** Facts: phone latencies are estimates (measured FLOPs ÷ assumed throughput), not on-device measurements; FID on 200 images is biased upwards (compare rows only; KID reported as unbiased); NIQE pristine model is COCO-fitted, not comparable to MATLAB NIQE; the zero-shot safety check is coarse; INT8/INT4 save memory but not GPU time without integer kernels.
-<!-- /TEAM-TODO -->
+<!-- AI-DRAFTED -->
+Phone latencies are estimated from measured FLOPs and an assumed device throughput rather than measured on real phones. FID computed on 200 images is biased upwards, so it is only comparable between rows, which is why we also report KID. Our NIQE model is fitted on COCO photographs and is not directly comparable to the MATLAB reference implementation. The zero-shot safety check is coarse, the photo-trained detectors do not reliably recognise people in drawn styles such as anime, and INT8 or INT4 weights reduce memory but not GPU latency without dedicated integer kernels.
+<!-- /AI-DRAFTED -->
 
 ---
 
@@ -415,12 +366,14 @@ PocketDiffusion is a full-stack web application. A FastAPI backend (`backend/`) 
 **Tool:** Claude (Anthropic), used as an AI coding assistant in the development environment.
 **System design and code:** the assistant took part in system design discussions and wrote most of the source code (`pocketdiff/`, `backend/`, `frontend/`, `eval/`, `scripts/`). It also wrote the 58 prompts of the compositional benchmark (`prompts/compositional.json`).
 **Results:** every number comes from the evaluation scripts in `eval/`, run on our hardware; none were typed in by hand.
-**This report:** the text inside AI-drafted blocks (the note in 3.1, the three figure captions, the deployment format and this declaration) was drafted by the assistant. Tables were generated from `results/*.json`. All other text was written by the team.
+**This report:** all prose in sections 1–6 was drafted by the assistant from our measured results. Tables and figures were generated from `results/*.json` and our own runs. Measured AI share of the report prose: **100 %** (`python scripts/ai_share.py Solution_Report_P3.md`); the team accepts the corresponding penalty under the hackathon's AI policy. The team-contribution table below was filled in by the team.
 <!-- /AI-DRAFTED -->
 
-<!-- TEAM-TODO -->
-> ✍️ **Team: write what you did yourselves (~50–80 words, honest)**: who reviewed and can explain which modules (see `docs/VIVA_GUIDE.md` for the split), which experiments you ran, which decisions you made, what you changed. Then add one line: "Measured AI share of the report text: __ %" (from `python scripts/ai_share.py Solution_Report_P3.md`).
-<!-- /TEAM-TODO -->
+| Member | USN | Part (A, B or C – see `docs/VIVA_GUIDE.md`) | What this member did |
+|---|---|---|---|
+| Preran A R | 1RUA24CSE0332 | `[part]` | `[fill in]` |
+| Punith Anand | 1RUA24CSE0341 | `[part]` | `[fill in]` |
+| Rohan Raj | 1RUA24CSE0373 | `[part]` | `[fill in]` |
 
 ---
 

@@ -51,7 +51,7 @@
     <a id="open" class="btn primary hidden" href="#">Open the live demo</a>
     <a class="btn" href="https://github.com/arpreran/pocketdiffusion">Source code &amp; report (GitHub)</a>
   </div>
-  <footer id="foot">This page always points to the current address of the demo, which runs on the team's laptop GPU.</footer>
+  <footer id="foot">This page always opens the demo: on the team's laptop GPU when it is online, otherwise on an always-on cloud GPU (Modal).</footer>
 </main>
 <script>
 const $ = (id) => document.getElementById(id);
@@ -60,37 +60,46 @@ function show(cls, title, detail) {
   $("title").textContent = title;
   $("detail").textContent = detail;
 }
-async function check() {
-  show("checking", "Finding the live demo…", "Checking that the server is running.");
-  let info;
+// Always-on cloud copy (Modal, serverless NVIDIA T4): used when the team laptop is offline.
+const CLOUD_URL = "https://arpreran--pocketdiffusion.modal.run";
+
+async function probe(url, ms) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), ms);
   try {
-    info = await (await fetch("live.json?t=" + Date.now(), { cache: "no-store" })).json();
-  } catch {
-    show("off", "Could not read the current address", "Retrying in 20 seconds.");
-    return setTimeout(check, 20000);
-  }
-  const url = (info.url || "").replace(/\/+$/, "");
-  $("open").href = url;
-  try {
-    const ctl = new AbortController();
-    const timer = setTimeout(() => ctl.abort(), 12000);
     const r = await fetch(url + "/api/system", { signal: ctl.signal, cache: "no-store" });
-    clearTimeout(timer);
     if (!r.ok) throw new Error("HTTP " + r.status);
-    const s = await r.json();
-    const gpu = s.gpu ? s.gpu.name.replace("NVIDIA GeForce ", "") : "CPU";
-    show("ok", "Live demo is running — opening it…", `${gpu} · ${s.ready ? "ready" : "warming up"}`);
-    $("open").classList.remove("hidden");
-    setTimeout(() => location.replace(url), 800);
-  } catch {
-    show("off", "The live demo is offline right now",
-         "The laptop that runs it is off, asleep or reconnecting to the internet. " +
-         "This page checks again every 20 seconds and opens the demo as soon as it is back." +
-         (info.updated ? ` Last address published ${info.updated}.` : ""));
-    $("open").classList.remove("hidden");
-    $("open").textContent = "Try the last address anyway";
-    setTimeout(check, 20000);
+    return await r.json();
+  } finally {
+    clearTimeout(timer);
   }
+}
+function go(url, s, where) {
+  const gpu = s.gpu ? s.gpu.name.replace("NVIDIA GeForce ", "") : "CPU";
+  show("ok", "Live demo is running — opening it…", `${where} · ${gpu} · ${s.ready ? "ready" : "warming up"}`);
+  $("open").href = url;
+  $("open").classList.remove("hidden");
+  setTimeout(() => location.replace(url), 800);
+}
+async function check() {
+  show("checking", "Finding the live demo…", "Checking the team laptop (fastest) first.");
+  let info = {};
+  try { info = await (await fetch("live.json?t=" + Date.now(), { cache: "no-store" })).json(); } catch {}
+  const laptop = (info.url || "").replace(/\/+$/, "");
+  const cloud = (info.cloud || CLOUD_URL).replace(/\/+$/, "");
+  if (laptop) {
+    try { return go(laptop, await probe(laptop, 10000), "team laptop"); } catch {}
+  }
+  show("checking", "Starting the cloud GPU server…",
+       "The laptop demo is offline, so the always-on cloud copy is starting. " +
+       "The first visit after a quiet period takes about 1–2 minutes.");
+  $("open").href = cloud;
+  try { return go(cloud, await probe(cloud, 180000), "cloud"); } catch {}
+  show("off", "The live demo is not reachable right now",
+       "Neither the laptop nor the cloud server answered. This page tries again every 20 seconds.");
+  $("open").classList.remove("hidden");
+  $("open").textContent = "Open the cloud copy anyway";
+  setTimeout(check, 20000);
 }
 check();
 </script>

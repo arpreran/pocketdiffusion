@@ -138,12 +138,16 @@ class JobManager:
 
     def _warmup(self, job: Job) -> None:
         from pocketdiff.planner import family_available
+        from pocketdiff.utils import cuda_available
         pd = self.pipeline()
-        for name in ("turbo1_taesd", "sd15_lcm4_taesd"):
-            if family_available(PRESETS[name].family):
-                ms = pd.engine.warmup_shapes(PRESETS[name])
-                job.emit("stage", {"name": f"warm-up {name}", "ms": ms})
-        pd.run("a photo of a cat", budget=Budget(latency_ms=3000, mode="quality"), seed=0)
+        if cuda_available():   # per-shape kernel autotuning only matters on the GPU
+            for name in ("turbo1_taesd", "sd15_lcm4_taesd"):
+                if family_available(PRESETS[name].family):
+                    ms = pd.engine.warmup_shapes(PRESETS[name])
+                    job.emit("stage", {"name": f"warm-up {name}", "ms": ms})
+            pd.run("a photo of a cat", budget=Budget(latency_ms=3000, mode="quality"), seed=0)
+        else:                  # CPU server: just load the planner's usual model once
+            pd.run("a photo of a cat", budget=Budget(latency_ms=20000, mode="fast", device_profile="this_cpu"), seed=0)
         if pd.verifier is not None:
             pd.verifier.detect(np.zeros((64, 64, 3), np.float32), ["cat"])
         self.ready.set()

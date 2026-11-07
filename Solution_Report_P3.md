@@ -19,7 +19,7 @@ HOW TO FINISH THIS REPORT (delete this comment before submitting)
 | **Team Name** | `[Enter registered team name]` |
 | **Team Members** | `[Full name – USN]`, `[Full name – USN]`, `[Full name – USN]`, `[Full name – USN]` |
 | **GitHub Repository** | https://github.com/arpreran/pocketdiffusion, evaluated commit `f3ebe8d` (update to your final commit before submitting: `git rev-parse --short HEAD`) |
-| **Live Demo / Deployment** | https://arpreran.github.io/pocketdiffusion/ (permanent address; forwards to the full-stack web app - FastAPI + SQLite + web UI - served from an RTX 4060 laptop GPU) |
+| **Live Demo / Deployment** | https://arpreran.github.io/pocketdiffusion/ (permanent address, always available: opens the full-stack web app - FastAPI + SQLite + web UI - on the team's RTX 4060 laptop when it is online, otherwise on the always-on cloud copy https://arpreran--pocketdiffusion.us-east.modal.run) |
 
 ---
 

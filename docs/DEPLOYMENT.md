@@ -15,6 +15,14 @@ If the laptop is off, the page says the demo is offline and keeps retrying every
 Free hosts such as Render (512 MB RAM) or Vercel (short serverless functions, 250 MB) cannot run
 the ~5 GB diffusion model, so the model itself stays on the laptop GPU.
 
+### Always-on cloud copy (Modal, free credits)
+`python -m modal deploy deploy/modal_app.py` builds an image with CUDA PyTorch and every model baked
+in and serves the same app on an NVIDIA T4 at https://arpreran--pocketdiffusion.us-east.modal.run.
+It scales to zero when unused (no cost) and cold-starts in ~1-2 min on the next visit; the Starter
+plan's $30/month free credits cover ~50 T4-hours. The permanent page falls back to it when the
+laptop is offline. (Free CPU hosts such as Render/Koyeb have 512 MB RAM; Hugging Face now requires
+PRO for Docker Spaces; Vercel functions are limited to 250 MB.)
+
 ### Details
 The app needs a GPU to answer quickly, so the simplest reliable option is to serve it from the
 laptop's RTX 4060 through Gradio's share relay:

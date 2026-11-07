@@ -29,8 +29,9 @@ Full tables, ablations and failure cases: `eval_P3_<TeamID>.md`. Every number is
 
 ## Live demo
 
-**https://arpreran.github.io/pocketdiffusion/** - permanent address. It checks that the demo server
-(the team's RTX 4060 laptop) is running and forwards to it; when the laptop is offline it says so.
+**https://arpreran.github.io/pocketdiffusion/** - permanent address. It opens the demo on the team's
+RTX 4060 laptop when that is online, otherwise on the always-on cloud copy
+(**https://arpreran--pocketdiffusion.us-east.modal.run**, serverless NVIDIA T4 on Modal, `deploy/modal_app.py`).
 
 ## Quick start
 

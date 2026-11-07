@@ -233,9 +233,10 @@ def generate(body: GenerateIn):
 
 @app.post("/api/compare")
 def compare(body: CompareIn):
-    if not family_available("sd15"):
-        raise HTTPException(503, "The race needs the SD1.5 baseline (50 steps, FP32), which is not installed on "
-                                 "this server - it would take minutes per image without a GPU. "
+    from pocketdiff.utils import cuda_available
+    if not family_available("sd15") or not cuda_available():
+        raise HTTPException(503, "The race runs the SD1.5 baseline (50 steps, FP32), which needs a GPU - "
+                                 "this server has none and it would take minutes per image. "
                                  "Use the GPU version of the app for the race.")
     job = jobs.submit("compare", body.model_dump())
     return {"job_id": job.id, "queue": jobs.queue_length()}

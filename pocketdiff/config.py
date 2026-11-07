@@ -8,7 +8,7 @@ from pathlib import Path
 import os
 
 ROOT = Path(__file__).resolve().parents[1]
-DATA_DIR = ROOT / "data"
+DATA_DIR = Path(os.environ.get("POCKETDIFF_DATA", ROOT / "data"))   # cloud: a writable location
 # POCKETDIFF_RESULTS lets a dry run write somewhere else without touching the real results
 RESULTS_DIR = Path(os.environ.get("POCKETDIFF_RESULTS", ROOT / "results"))
 ARTIFACTS_DIR = ROOT / "artifacts"          # things *we* trained / fitted

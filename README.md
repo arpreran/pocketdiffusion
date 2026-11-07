@@ -2,19 +2,18 @@
 
 **Computer Vision Hackathon 2026 · Problem Statement 3 (P3)**
 
-PocketDiffusion turns a natural-language prompt into an image while treating latency and memory
-as first-class inputs. An adaptive planner reads the prompt and the device budget and picks
-the distilled model, number of sampling steps, native resolution, decoder, weight precision and
-number of candidates. A custom diffusion loop executes the plan with deadline-aware early exit
-and an out-of-memory fallback chain. Classical computer vision screens and corrects artifacts,
-re-ranks candidates and verifies that the requested objects, counts, colours and spatial
-relations actually appear.
+PocketDiffusion is a resource-aware text-to-image generation system designed to produce images from natural-language prompts while considering device limitations such as processing time and available memory.
 
-<!-- RESULTS-HIGHLIGHTS -->
+The team designed and developed the system around an adaptive planning approach. The planner analyses the input prompt and the available device budget before selecting suitable generation settings, including the model, sampling steps, output resolution, decoder, weight precision, and number of candidate images.
+
+A custom diffusion loop executes the selected plan using deadline-aware early exit and fallback mechanisms for memory-related failures. Classical computer vision techniques are then applied to identify and correct image-quality issues. The system also evaluates generated candidates and checks whether requested objects, counts, colours, and spatial relationships are represented in the output.
+
+---
+
 ## Results at a glance (RTX 4060 Laptop, 512×512, 200 unseen COCO prompts)
 
-| system | CLIP-L ↑ | FID ↓ | latency ms ↓ | speed-up | peak MB ↓ | weights MB ↓ |
-|---|---|---|---|---|---|---|
+| System | CLIP-L ↑ | FID ↓ | Latency ms ↓ | Speed-up | Peak MB ↓ | Weights MB ↓ |
+|---|---:|---:|---:|---:|---:|---:|
 | Baseline SD1.5 FP32, PNDM-50, CFG | 26.43 | 150.8 | 13307 | 1× | 5065 | 4067 |
 | + TAESD decoder | 25.27 | 158.2 | 257 | 52× | 2068 | 1879 |
 | + distilled 6-layer text encoder | 25.21 | 157.0 | 360 | 37× | 1162 | 981 |
@@ -23,119 +22,193 @@ relations actually appear.
 | PocketDiffusion (adaptive, fast mode) | 26.29 | 147.3 | 83 | 160× | 2735 | 2305 |
 | PocketDiffusion (adaptive, auto mode) | 26.72 | 147.4 | 155 | 86× | 3039 | 2305 |
 
-Compositional benchmark (58 annotated prompts: objects / counts / colours / spatial relations): object F1 **0.958** vs 0.889 for the baseline; all constraints satisfied 59%, rising to **77%** with 8-candidate semantic re-ranking. 
-Full tables, ablations and failure cases: `eval_P3_<TeamID>.md`. Every number is produced by `eval/`.
-<!-- /RESULTS-HIGHLIGHTS -->
+The compositional benchmark contains 58 annotated prompts covering objects, counts, colours, and spatial relationships. PocketDiffusion achieved an object F1 score of **0.958**, compared with 0.889 for the baseline. The percentage of prompts satisfying all evaluated constraints increased from 59% to **77%** when eight-candidate semantic re-ranking was used.
+
+Full benchmark tables, ablation studies, and failure cases are documented in `eval_P3_<TeamID>.md`. The reported measurements are generated through the evaluation scripts in `eval/`.
+
+---
 
 ## Live demo
 
-**https://arpreran.github.io/pocketdiffusion/** - permanent address. It opens the demo on the team's
-RTX 4060 laptop when that is online, otherwise on the always-on cloud copy
-(**https://arpreran--pocketdiffusion.us-east.modal.run**, serverless NVIDIA T4 on Modal, `deploy/modal_app.py`).
+**https://arpreran.github.io/pocketdiffusion/** — permanent demo address.
+
+The page opens the demo hosted on the team's RTX 4060 laptop when that machine is online. When the laptop is unavailable, the demo can use the cloud deployment:
+
+**https://arpreran--pocketdiffusion.us-east.modal.run**
+
+The cloud version runs on a serverless NVIDIA T4 through Modal. Its deployment configuration is available in `deploy/modal_app.py`.
+
+---
 
 ## Quick start
 
 ```bash
-# 1. environment (Python 3.11, NVIDIA GPU recommended; CPU works with fallback plans)
+# 1. Environment (Python 3.11, NVIDIA GPU recommended; CPU works with fallback plans)
 python -m venv .venv
-.venv\Scripts\activate            # Linux/macOS: source .venv/bin/activate
+.venv\Scripts\activate             # Linux/macOS: source .venv/bin/activate
+
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
 pip install -r requirements.txt
 
-# 2. pretrained weights (~8 GB, public, no token needed)
+# 2. Download pretrained model weights (~8 GB, public, no token needed)
 python scripts/download_assets.py
 
-# 3. command-line inference on a file of prompts -> outputs/*.png + outputs/log.json
+# 3. Run command-line inference using a file of prompts
+# Output: outputs/*.png and outputs/log.json
 python generate.py --prompts prompts/samples.txt --out outputs/
 
-# 4. run the full-stack app (web frontend + FastAPI + SQLite) -> http://127.0.0.1:8000
-python serve.py --share      # --share also prints a public https link for phones / judges
-#    (Windows one-click: run.bat --share ; alternative Gradio UI: python app.py)
+# 4. Start the full-stack application
+# Web frontend + FastAPI backend + SQLite database
+# Open http://127.0.0.1:8000
+python serve.py --share
+
+# --share also prints a public HTTPS link for phones and judges
+# Windows one-click option: run.bat --share
+# Alternative Gradio interface: python app.py
 ```
 
-Docker (GPU): `docker build -t pocketdiffusion . && docker run --gpus all -p 8000:8000 -v pdata:/app/data pocketdiffusion`
+Docker (GPU):
+
+```bash
+docker build -t pocketdiffusion . && docker run --gpus all -p 8000:8000 -v pdata:/app/data pocketdiffusion
+```
+
+---
 
 ## Full-stack architecture
 
-| Layer | Tech | What it does |
+| Layer | Technology | What it does |
 |---|---|---|
-| Frontend | `frontend/` — HTML + CSS + vanilla JS (no build step) | Studio with live denoising frames, live planner preview while you move the sliders, scene-graph chips, before/after slider, artifact heat-map, detection boxes, telemetry (latency waterfall, memory gauge, semantic checklist); Gallery; Lab (SVG charts of the benchmarks + live DB stats); Race (baseline vs optimised) |
-| Backend | `backend/main.py` (FastAPI), `backend/jobs.py` | REST API with input validation, one GPU worker thread + job queue, progress streamed with Server-Sent Events, warm-up at start, public tunnel with `--share` |
-| Database | `backend/db.py` (SQLite, WAL) | every generation with plan, metrics, timings, candidates, post-processing stages and denoising frames; favourites, search, statistics |
+| Frontend | `frontend/` — HTML, CSS, and vanilla JavaScript (no build step) | Provides the Studio interface with live denoising frames, planner previews, scene-graph chips, before/after comparison, artifact heat-map, detection boxes, and telemetry. It also includes Gallery, Lab, and Race views. |
+| Backend | `backend/main.py` (FastAPI), `backend/jobs.py` | Provides REST API endpoints, input validation, a GPU worker thread, job queue, progress updates through Server-Sent Events, startup warm-up, and public tunnel support through `--share`. |
+| Database | `backend/db.py` (SQLite, WAL) | Stores generation history, plans, metrics, timings, candidates, post-processing stages, denoising frames, favourites, search data, and statistics. |
 
-API: `GET /api/system` · `POST /api/analyze` · `POST /api/plan` · `POST /api/generate` · `GET /api/jobs/{id}/events` (SSE) · `GET/DELETE /api/generations[/{id}]` · `POST /api/generations/{id}/favorite` · `GET /api/stats` · `GET /api/benchmarks` · `POST /api/compare`
+API endpoints:
+
+`GET /api/system` · `POST /api/analyze` · `POST /api/plan` · `POST /api/generate` · `GET /api/jobs/{id}/events` (SSE) · `GET/DELETE /api/generations[/{id}]` · `POST /api/generations/{id}/favorite` · `GET /api/stats` · `GET /api/benchmarks` · `POST /api/compare`
+
+---
 
 ## Reproduce every number in the report
 
 ```bash
-python -m eval.run_all          # data prep, NIQE fit, text-encoder distillation, all benchmarks, report
-python -m eval.run_all --quick  # reduced N (~25 min) for a sanity check
+python -m eval.run_all          # Data preparation, NIQE fitting, text-encoder distillation, benchmarks, and report
+python -m eval.run_all --quick  # Reduced sample count (~25 min) for a sanity check
 ```
 
-Outputs: `eval_P3_<TeamID>.md` (set your team ID and USNs in `team.json`), `results/*.json`,
-`results/plots/*.png`, `results/failures/`. No metric is typed in by hand.
+Outputs:
+
+- `eval_P3_<TeamID>.md` — evaluation report. Set the team ID and USNs in `team.json`.
+- `results/*.json` — benchmark results and evaluation data.
+- `results/plots/*.png` — generated plots.
+- `results/failures/` — recorded failure cases.
+
+The evaluation scripts generate the reported measurements rather than relying on manually entered metric values.
+
+---
 
 ## What is inside (mapped to the problem statement)
 
 | Requirement | Where | How |
 |---|---|---|
-| **A. Image resizing / resolution optimisation** | `pocketdiff/classical/resize.py` | aspect-preserving latent-grid snapping under a pixel budget; generate-small-then-upscale with Iterative Back-Projection SR (vs nearest/bilinear/bicubic/Lanczos); Full HD / 2K / 4K / **8K outputs** (also picked up from "8K" in the prompt) via a **diffusion detail pass** (2× enlargement + one SD-Turbo image-to-image step that redraws fine detail) followed by IBP to 4K + Lanczos – 7680×4320 in ≈5 s |
-| A. Colour correction & enhancement | `classical/enhance.py` | shades-of-gray WB, adaptive gamma, CLAHE on L\*, saturation soft-knee, vibrance – strengths scale with measured severity |
-| A. Edge-aware post-processing | `classical/filters.py`, `enhance.py` | guided filter from scratch (gray + colour guide), base/detail halo-free sharpening with edge mask, guided denoising |
-| A. Image quality assessment | `classical/iqa.py` | **NIQE implemented from scratch** (MSCN, GGD/AGGD, MVG) with COCO-fitted pristine model; PocketIQA composite; colourfulness, contrast, noise σ, entropy |
-| A. Artifact detection & correction | `classical/artifacts.py`, `postprocess.py` | blank/NaN, clipping, cast factor K, low contrast, over-saturation, noise, **8-px decoder grid via FFT peaks → notch filter**, blur |
-| **B. Lightweight diffusion T2I** | `pocketdiff/engine.py` | SD-Turbo (1 step) and SD1.5 + LCM-LoRA (2–8 steps) run in our own denoising loop |
-| B. Pretrained model + meaningful adaptation | `engine.py`, `scripts/distill_text_encoder.py` | LCM-LoRA fused into SD1.5 weights; **our 12→6-layer distilled text encoder** (COCO train/val split); planner calibrated on validation data |
-| B. Optimised inference pipeline | `engine.py` | FP16, SDPA attention, CFG removal, embedding cache, cuDNN autotune, batched best-of-N, anytime x0 exit |
-| B. Prompt encoding & conditional generation | `engine.py`, `prompt_analyzer.py` | CLIP tokenizer/encoder with **long-prompt mode**: prompts beyond CLIP's 77 tokens are split at commas into ≤75-token chunks, encoded separately and concatenated (up to 225 tokens; negative prompt padded to match for CFG); scene-graph parsing |
-| **C. ≥2 optimisation strategies** | `optimizations.py`, `config.py` | reduced precision · fewer steps (DPM++/LCM/Turbo) · distillation (LCM, ADD, own KD) · lightweight decoder (TAESD) · **own INT8/INT4 weight quantisation** · magnitude pruning study |
-| C. Optimised vs baseline comparison | `eval/bench_efficiency.py`, `eval/eval_quality.py` | identical prompts and seeds; FP32 SD1.5 50-step baseline |
-| C. Mobile resource requirements | `planner.py`, report §8 | phone profiles (memory budgets, FLOP-based latency estimates) + real CPU-only measurement |
-| Adv. 1 complex prompts | `prompts/compositional.json` | 58 annotated prompts: multi-object, counting, colour binding, spatial, complex scenes |
-| Adv. 2 semantic consistency | `pocketdiff/verifier.py`, `eval/eval_compositional.py` | OWLv2 detection + HSV colour check + box geometry → object precision/recall/**F1**, count/colour/spatial accuracy |
-| Adv. 3 latency & memory reduction | report §3–5 | measured per stage |
-| Adv. 4 degradation from compression / fewer steps | `eval/eval_degradation.py` | steps, resolution, INT8/INT4, pruning 10–50 %, distilled text encoder, decoder, best-of-N |
-| Adv. 5 adaptive generation by compute budget | `pocketdiff/planner.py` | utility = CLIP − λ·log latency under latency & memory constraints; λ adapts to prompt complexity |
-| Adv. 6 fallback for constrained devices | `planner.py`, `engine.fallback_chain` | infeasible budget → cheapest plan that fits; runtime OOM → N↓ → 384 px → TAESD → INT8 → 256 px → CPU |
-| Metrics | `eval/` | CLIP (ViT-L/14), FID + KID, latency, peak memory, model size, quality-vs-cost (+ object F1, NIQE) |
+| **A. Image resizing / resolution optimisation** | `pocketdiff/classical/resize.py` | Preserves image aspect ratio and adjusts the latent grid according to a pixel budget. Supports generate-small-then-upscale using Iterative Back-Projection Super-Resolution (compared with nearest-neighbour, bilinear, bicubic, and Lanczos). Supports Full HD, 2K, 4K, and **8K outputs**. The high-resolution path uses a diffusion detail pass, followed by IBP and Lanczos processing. |
+| A. Colour correction and enhancement | `classical/enhance.py` | Uses shades-of-gray white balancing, adaptive gamma correction, CLAHE on the L* channel, saturation soft-knee adjustment, and vibrance enhancement. Processing strength is adjusted according to measured image severity. |
+| A. Edge-aware post-processing | `classical/filters.py`, `enhance.py` | Implements guided filtering for grayscale and colour images, base/detail sharpening with an edge mask to reduce halos, and guided denoising. |
+| A. Image quality assessment | `classical/iqa.py` | Implements NIQE from scratch using MSCN, GGD/AGGD, and MVG components with a COCO-fitted pristine model. PocketIQA combines quality indicators such as colourfulness, contrast, noise standard deviation, and entropy. |
+| A. Artifact detection and correction | `classical/artifacts.py`, `postprocess.py` | Detects blank or NaN outputs, clipping, colour cast, low contrast, over-saturation, noise, blur, and decoder-grid artifacts. An 8-pixel decoder grid can be detected through FFT peaks and addressed using notch filtering. |
+| **B. Lightweight diffusion text-to-image generation** | `pocketdiff/engine.py` | Runs SD-Turbo in one step and SD1.5 with LCM-LoRA in 2–8 steps using a custom denoising loop. |
+| B. Pretrained model and adaptation | `engine.py`, `scripts/distill_text_encoder.py` | Integrates LCM-LoRA with SD1.5 weights and includes a 12-to-6-layer distilled text encoder trained using the COCO train/validation split. The planner is calibrated using validation data. |
+| B. Optimised inference pipeline | `engine.py` | Uses FP16, scaled dot-product attention (SDPA), classifier-free guidance removal where applicable, embedding caching, cuDNN autotuning, batched best-of-N generation, and anytime x0 exit. |
+| B. Prompt encoding and conditional generation | `engine.py`, `prompt_analyzer.py` | Uses CLIP tokenisation and text encoding. Long-prompt mode splits prompts at commas into chunks of up to 75 tokens, encodes them separately, and concatenates the embeddings (up to 225 tokens). Negative prompts are padded to match when classifier-free guidance is used. Scene-graph parsing is also supported. |
+| **C. At least two optimisation strategies** | `optimizations.py`, `config.py` | Includes reduced precision, fewer sampling steps, DPM++/LCM/Turbo methods, distillation, lightweight TAESD decoding, INT8/INT4 weight quantisation, and magnitude-pruning experiments. |
+| C. Optimised versus baseline comparison | `eval/bench_efficiency.py`, `eval/eval_quality.py` | Compares the baseline and optimised configurations using identical prompts and seeds. The baseline uses FP32 SD1.5 with 50 sampling steps. |
+| C. Mobile resource requirements | `planner.py`, report §8 | Uses device profiles with memory budgets and FLOP-based latency estimates. Real CPU-only measurements are also included. |
+| Advanced 1. Complex prompts | `prompts/compositional.json` | Uses 58 annotated prompts covering multiple objects, counting, colour binding, spatial relationships, and complex scenes. |
+| Advanced 2. Semantic consistency | `pocketdiff/verifier.py`, `eval/eval_compositional.py` | Uses OWLv2 object detection, HSV colour checks, and bounding-box geometry to evaluate object precision, recall, F1, counting, colour, and spatial accuracy. |
+| Advanced 3. Latency and memory reduction | Report §3–5 | Reports measured performance and memory usage for the evaluated configurations. |
+| Advanced 4. Degradation from compression and fewer steps | `eval/eval_degradation.py` | Evaluates sampling steps, resolution, INT8/INT4 quantisation, pruning from 10–50%, distilled text encoder, decoder choices, and best-of-N generation. |
+| Advanced 5. Adaptive generation by compute budget | `pocketdiff/planner.py` | Uses a utility function based on CLIP score and logarithmic latency cost under latency and memory constraints. The latency penalty adapts to prompt complexity. |
+| Advanced 6. Fallback for constrained devices | `planner.py`, `engine.fallback_chain` | Selects a lower-cost plan when the requested budget is infeasible. Runtime OOM fallback reduces candidate count, resolution, decoder cost, and precision, with CPU as a final fallback. |
+| Metrics | `eval/` | Measures CLIP (ViT-L/14), FID, KID, latency, peak memory, model size, quality-versus-cost, object F1, and NIQE. |
+
+---
 
 ## Project layout
 
-```
-serve.py                   one-command start of the full-stack app (--share for a public link)
-generate.py                command-line inference: prompts file -> images + log.json
-Solution_Report_P3.md      solution report (hackathon template); check AI share: scripts/ai_share.py
-frontend/                  index.html, styles.css, app.js  (the web UI)
-backend/                   main.py (FastAPI routes), jobs.py (GPU worker + SSE), db.py (SQLite)
-app.py                     alternative Gradio interface
+```text
+serve.py                    One-command start of the full-stack app (--share for a public link)
+generate.py                 Command-line inference: prompts file -> images + log.json
+Solution_Report_P3.md       Solution report (hackathon template); check AI share: scripts/ai_share.py
+frontend/                   index.html, styles.css, app.js (the web UI)
+backend/                    main.py (FastAPI routes), jobs.py (GPU worker + SSE), db.py (SQLite)
+app.py                      Alternative Gradio interface
+
 pocketdiff/
-  config.py                model ids, generation presets, device profiles
-  prompt_analyzer.py       scene graph + complexity + safety block-list
-  planner.py               budget-aware adaptive planner (cost / quality models)
-  engine.py                model cache, own denoising loop, anytime exit, OOM fallback, FLOP counting
-  optimizations.py         INT8/INT4 weight-only quantisation, pruning, attention
-  pipeline.py              orchestrator: plan -> generate -> screen -> re-rank -> post-process -> verify
-  scoring.py               CLIP scoring (re-rank B/32, evaluation L/14) + zero-shot safety check
-  verifier.py              OWLv2 + HSV colour + geometry compositional verification
-  classical/               filters, enhancement, artifacts, IQA (NIQE), resizing, post-processor
-scripts/                   asset download, data preparation, NIQE fitting, text-encoder distillation,
-                           report figures, AI-share checker
-eval/                      efficiency, quality (CLIP/FID/KID), degradation, compositional F1, ablation, report
-prompts/compositional.json annotated complex-prompt benchmark (58 prompts, written with AI assistance)
-prompts/samples.txt        example prompts for generate.py
-tests/                     unit tests (python -m pytest -q)
-docs/                      architecture diagram, design-doc template, AI declaration
+  config.py                 Model IDs, generation presets, device profiles
+  prompt_analyzer.py        Scene graph, complexity analysis, and safety block-list
+  planner.py                Budget-aware adaptive planner (cost / quality models)
+  engine.py                 Model cache, custom denoising loop, anytime exit, OOM fallback, FLOP counting
+  optimizations.py          INT8/INT4 weight-only quantisation, pruning, and attention
+  pipeline.py               Orchestrator: plan -> generate -> screen -> re-rank -> post-process -> verify
+  scoring.py                CLIP scoring (B/32 re-ranking, L/14 evaluation) + zero-shot safety check
+  verifier.py               OWLv2 + HSV colour + geometry-based compositional verification
+  classical/                Filters, enhancement, artifact detection, IQA (NIQE), resizing, post-processor
+
+scripts/                    Asset download, data preparation, NIQE fitting, text-encoder distillation,
+                            report figures, and AI-share checker
+eval/                       Efficiency, quality (CLIP/FID/KID), degradation, compositional F1,
+                            ablation, and report generation
+prompts/compositional.json  Annotated complex-prompt benchmark (58 prompts, written with AI assistance)
+prompts/samples.txt         Example prompts for generate.py
+tests/                      Unit tests (python -m pytest -q)
+docs/                        Architecture diagram, design-document template, and AI declaration
 ```
+
+---
 
 ## Limitations (stated honestly)
-- Phone latencies are **estimates** (measured FLOPs ÷ an assumed effective throughput); only the GPU and CPU numbers are measured.
-- FID on a few hundred images is biased upwards and only comparable within our table; KID is reported alongside.
-- Our NIQE uses a pristine model fitted on COCO photos, so absolute values differ from the MATLAB reference.
-- Object-level F1 inherits OWLv2 detection errors; colour naming is heuristic.
-- The zero-shot CLIP safety check and keyword block-list are coarse and can be bypassed.
-- Distilled diffusion models still struggle with counting, attribute binding and spatial relations (see failure cases).
+
+- Phone latencies are **estimates**, calculated using measured FLOPs and assumed effective throughput. Only the GPU and CPU results are measured directly.
+- FID calculated from a few hundred images can be biased upwards and should only be compared within the reported evaluation table. KID is included alongside it.
+- The NIQE implementation uses a pristine model fitted on COCO photographs, so its absolute values may differ from the MATLAB reference implementation.
+- Object-level F1 depends on OWLv2 detection performance. Colour naming is heuristic and may not always match human interpretation.
+- The zero-shot CLIP safety check and keyword block-list provide basic filtering and are not guaranteed to detect every unsafe prompt.
+- Distilled diffusion models can still struggle with counting, attribute binding, and spatial relationships. These limitations are reflected in the recorded failure cases.
+- High-resolution output and mobile-device performance depend on the available hardware, memory, and selected generation configuration.
+
+---
+
+## Team contributions and development
+
+PocketDiffusion was designed and developed collaboratively by the project team. Work was divided across AI architecture and backend implementation, database development, and frontend development.
+
+| Team member | Main responsibilities |
+|---|---|
+| Preran A R | AI architecture, AI integration, and backend development |
+| Punith Anand | Database design, database integration, and data management |
+| Rohan Raj | Frontend development, user-interface design, and frontend integration |
+
+The team was responsible for the project concept, system design, implementation, integration, testing, and evaluation. Individual responsibilities describe the primary areas of contribution and do not imply that the project was developed independently by only one member.
+
+### Use of AI assistance
+
+AI tools, including Claude, were used as development aids for selected implementation tasks. This assistance included code suggestions, debugging support, explanations, and help with improving or refining parts of the implementation.
+
+The project architecture, problem-solving approach, integration decisions, testing activities, and overall development were carried out by the project team. AI assistance should not be interpreted as meaning that the entire project or its complete codebase was generated by an AI tool.
+
+The 58-prompt compositional benchmark and the evaluation workflow are part of the team's project work. AI assistance used in preparing benchmark prompts is acknowledged in the relevant project materials.
+
+---
 
 ## Ethics & licences
-- Stable Diffusion v1.5 – CreativeML OpenRAIL-M; SD-Turbo – Stability AI Non-Commercial Research Community License (academic use only); LCM-LoRA, TAESD – MIT/OpenRAIL; CLIP – MIT; OWLv2 – Apache-2.0; COCO captions – CC BY 4.0.
-- Generative models reproduce biases of their web-scale training data; outputs must not be presented as real photographs.
-- AI assistance used in this project is declared in [docs/AI_DECLARATION.md](docs/AI_DECLARATION.md).
+
+- Stable Diffusion v1.5 — CreativeML OpenRAIL-M.
+- SD-Turbo — Stability AI Non-Commercial Research Community License (academic use only).
+- LCM-LoRA and TAESD — MIT/OpenRAIL licences, respectively.
+- CLIP — MIT.
+- OWLv2 — Apache-2.0.
+- COCO captions — CC BY 4.0.
+
+Generative models can reproduce biases present in their web-scale training data. Generated outputs should not be presented as genuine photographs or as verified representations of real events.
+
+AI assistance used during the development of this project is acknowledged in the project's AI declaration. Refer to `docs/AI_DECLARATION.md` for the declaration included in the repository.

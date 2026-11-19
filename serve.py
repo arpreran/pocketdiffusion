@@ -120,6 +120,20 @@ PAGES_DIR = ROOT_DIR / "data" / "pages"        # local clone of the repo's gh-pa
 PAGES_BRANCH = "gh-pages"
 
 
+def pages_url() -> str:
+    """https://github.com/<user>/<repo>(.git) -> https://<user>.github.io/<repo>/ (the permanent page)."""
+    import re
+    import subprocess
+
+    try:
+        origin = subprocess.run(["git", "remote", "get-url", "origin"], cwd=ROOT_DIR, capture_output=True,
+                                text=True, timeout=20).stdout.strip()
+    except Exception:
+        return ""
+    m = re.search(r"github\.com[:/]([^/]+)/([^/]+?)(?:\.git)?/?$", origin)
+    return f"https://{m.group(1).lower()}.github.io/{m.group(2)}/" if m else ""
+
+
 def publish_live_url(url: str) -> None:
     """Write the current public URL to live.json on the repo's gh-pages branch.
 
@@ -214,6 +228,10 @@ def main() -> None:
     ap.add_argument("--publish-link", action="store_true",
                     help="with --share: keep the permanent GitHub Pages page pointing at the current link")
     args = ap.parse_args()
+
+    if args.share and args.publish_link:
+        # share links in the app point at the permanent page, which forwards to whatever link is live
+        os.environ.setdefault("POCKETDIFF_PUBLIC_PAGE", pages_url())
 
     import uvicorn
     from backend.main import app, jobs

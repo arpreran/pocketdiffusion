@@ -7,30 +7,37 @@ POST /api/analyze                prompt -> scene graph, complexity, token count 
 POST /api/plan                   prompt + budget -> planner decision              (CPU, instant)
 POST /api/generate               enqueue a generation job -> {job_id}
 POST /api/compare                enqueue baseline-vs-optimised race -> {job_id}
+POST /api/edit                   image-to-image edit of an upload or a stored image -> {job_id}
 GET  /api/jobs/{id}/events       Server-Sent Events: queued/start/analysis/plan/step/stage/result/error/end
 GET  /api/generations            history (paginated, filter: favorites, family, q)
 GET  /api/generations/{id}       full record (candidates, stages, frames, metrics)
 POST /api/generations/{id}/favorite
+POST /api/generations/{id}/attention   cross-attention heat map per prompt word ("Explain")
 DELETE /api/generations/{id}
 GET  /api/stats                  aggregate statistics from the database
 GET  /api/benchmarks             evaluation results (results/*.json) for the Lab charts
+GET  /share/{id}                 public share page for one image (Open Graph preview)
+GET  /manifest.webmanifest, /sw.js   installable app (PWA)
 GET  /media/...                  stored images;  GET /  -> single-page frontend
 """
 from __future__ import annotations
 
 import asyncio
+import html
 import json
 import os
+import re
 import shutil
 import threading
+import time
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from pocketdiff.config import DATA_DIR, DEVICE_PROFILES, MODEL_IDS, PRESETS, RESULTS_DIR, ROOT
 from pocketdiff.planner import Budget, Planner, family_available
@@ -132,12 +139,57 @@ class GenerateIn(BudgetIn):
         return v
 
 
+class EditIn(BaseModel):
+    prompt: str = Field(..., min_length=1, max_length=2000)
+    strength: float = Field(0.55, ge=0.1, le=1.0)
+    seed: int | None = Field(None, ge=0, le=2**31 - 1)
+    source_id: str | None = Field(None, max_length=64)
+    image: str | None = Field(None, max_length=14_000_000)      # data URL, ~10 MB file
+
+    @model_validator(mode="after")
+    def _one_source(self):
+        if bool(self.source_id) == bool(self.image):
+            raise ValueError("send exactly one of source_id (a stored image) or image (an upload)")
+        if self.source_id and not GID.fullmatch(self.source_id):
+            raise ValueError("bad source_id")
+        return self
+
+
 class CompareIn(BaseModel):
     prompt: str = Field(..., min_length=1, max_length=2000)
     seed: int = Field(7, ge=0, le=2**31 - 1)
 
 
 # ------------------------------------------------------------------ helpers
+GID = re.compile(r"[0-9]{8}-[0-9]{6}-[0-9a-f]{6}")
+
+
+def check_gid(gid: str) -> str:
+    if not GID.fullmatch(gid or ""):
+        raise HTTPException(400, "bad id")
+    return gid
+
+
+def public_page() -> str:
+    """Permanent address that forwards to the current live link (set by serve.py --publish-link)."""
+    return os.environ.get("POCKETDIFF_PUBLIC_PAGE", "")
+
+
+async def wait_job(job, timeout_s: float):
+    """Await a worker job from an async route; returns its 'result' event data."""
+    t_end = time.time() + timeout_s
+    while job.status not in ("done", "error"):
+        if time.time() > t_end:
+            raise HTTPException(504, "The GPU worker is busy - please try again in a moment.")
+        await asyncio.sleep(0.1)
+    with job.lock:
+        evs = list(job.events)
+    if job.status == "error":
+        msg = next((e["data"].get("message") for e in reversed(evs) if e["event"] == "error"), "failed")
+        raise HTTPException(422, msg)
+    return next((e["data"] for e in reversed(evs) if e["event"] == "result"), None)
+
+
 _tok = None
 _tok_lock = threading.Lock()
 
@@ -207,6 +259,8 @@ def system():
         # cloud backup (Hugging Face Space, CPU only): the UI says so and points to the GPU version
         "cloud": bool(os.environ.get("SPACE_ID")), "gpu_link": os.environ.get("POCKETDIFF_GPU_LINK", ""),
         "default_device": "this_gpu" if gpu else "this_cpu",
+        "public_page": public_page(),
+        "features": ["generate", "edit", "attention", "share", "pwa", "compare"],
     }
 
 
@@ -244,6 +298,14 @@ def compare(body: CompareIn):
                                  "this server has none and it would take minutes per image. "
                                  "Use the GPU version of the app for the race.")
     job = jobs.submit("compare", body.model_dump())
+    return {"job_id": job.id, "queue": jobs.queue_length()}
+
+
+@app.post("/api/edit")
+def edit(body: EditIn):
+    if body.source_id and db.get(body.source_id) is None:
+        raise HTTPException(404, "source image not found")
+    job = jobs.submit("edit", body.model_dump())
     return {"job_id": job.id, "queue": jobs.queue_length()}
 
 
@@ -291,6 +353,23 @@ def get_generation(gid: str):
     return g
 
 
+@app.post("/api/generations/{gid}/attention")
+async def attention(gid: str):
+    """Explain: which image regions each prompt word influenced (cross-attention, cached)."""
+    check_gid(gid)
+    cached = STORE / gid / "attn" / "attention.json"
+    if cached.exists():
+        return json.loads(cached.read_text(encoding="utf-8"))
+    g = db.get(gid)
+    if g is None:
+        raise HTTPException(404, "not found")
+    if g.get("kind") == "edit":
+        raise HTTPException(422, "Explain works for text-to-image results; this image was edited from a picture.")
+    if not jobs.ready.is_set():
+        raise HTTPException(503, "The models are still loading - try again in a few seconds.")
+    return await wait_job(jobs.submit("attention", {"gid": gid}), timeout_s=240)
+
+
 @app.post("/api/generations/{gid}/favorite")
 def favorite(gid: str):
     v = db.toggle_favorite(gid)
@@ -323,6 +402,78 @@ def benchmarks():
             v.pop("per_prompt", None)
     return {"quality": q, "efficiency": {k: v for k, v in e.items() if not k.startswith("_unet")},
             "compositional": comp, "degradation": deg, "ablation": abl}
+
+
+SHARE_HTML = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{title} - PocketDiffusion</title>
+<meta name="description" content="{desc}">
+<meta property="og:type" content="website"><meta property="og:title" content="{title}">
+<meta property="og:description" content="{desc}"><meta property="og:image" content="{og_image}">
+<meta name="twitter:card" content="summary_large_image"><meta name="theme-color" content="#0b0b14">
+<link rel="icon" href="/static/icons/icon-192.png">
+<style>
+:root{{--bg:#0b0b14;--card:#151524;--text:#ecebf6;--muted:#a3a2b8;--a1:#8b5cf6;--a2:#06b6d4;--line:#2a2a40}}
+@media (prefers-color-scheme: light){{:root{{--bg:#f6f5fb;--card:#fff;--text:#16151f;--muted:#5d5c70;--line:#e3e1ee}}}}
+*{{box-sizing:border-box}}body{{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}}
+main{{max-width:880px;margin:0 auto;padding:24px 16px 48px}}
+.brand{{font-weight:700;letter-spacing:-.01em;color:var(--text);text-decoration:none}}.brand b{{color:var(--a1)}}
+figure{{margin:16px 0;background:var(--card);border:1px solid var(--line);border-radius:18px;overflow:hidden}}
+figure img{{display:block;width:100%;height:auto}}
+figcaption{{padding:14px 16px}}figcaption p{{margin:0 0 10px;font-size:17px}}
+.chips{{display:flex;flex-wrap:wrap;gap:6px}}.chips span{{font:12px ui-monospace,monospace;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:3px 9px}}
+.actions{{display:flex;flex-wrap:wrap;gap:10px}}
+.btn{{display:inline-block;padding:10px 16px;border-radius:12px;border:1px solid var(--line);color:var(--text);text-decoration:none;font-weight:600}}
+.btn.primary{{background:linear-gradient(135deg,var(--a1),var(--a2));border:0;color:#fff}}
+</style></head><body><main>
+<a class="brand" href="/">Pocket<b>Diffusion</b></a>
+<figure><img src="{image}" alt="{alt}" width="{w}" height="{h}">
+<figcaption><p>{prompt}</p><div class="chips">{chips}</div></figcaption></figure>
+<div class="actions"><a class="btn primary" href="/?remix={gid}#studio">Remix this prompt</a>
+<a class="btn" href="/#studio">Make your own</a><a class="btn" href="{download}" download>Download {w}&times;{h}</a></div>
+</main></body></html>"""
+
+
+def _origin(request: Request) -> str:
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
+    proto = request.headers.get("x-forwarded-proto") or ("https" if host.endswith(".live") else request.url.scheme)
+    return f"{proto}://{host}" if host else str(request.base_url).rstrip("/")
+
+
+@app.get("/share/{gid}", response_class=HTMLResponse)
+def share_page(gid: str, request: Request):
+    check_gid(gid)
+    g = db.get(gid)
+    if g is None:
+        return HTMLResponse("<!doctype html><meta charset=utf-8><title>Not found</title>"
+                            "<p style='font-family:system-ui;padding:24px'>This image was deleted. "
+                            "<a href='/'>Open PocketDiffusion</a></p>", status_code=404)
+    e = html.escape
+    fam = {"sd_turbo": "SD-Turbo", "sd15": "SD1.5"}.get(g["family"], g["family"])
+    chips = [f"{fam} &middot; {g['steps_done']}/{g['steps']} steps", f"{g['width']}&times;{g['height']}",
+             f"{g['latency_ms'] / 1000:.2f} s" if g.get("latency_ms") else "",
+             f"CLIP {g['clip']:.1f}" if g.get("clip") is not None else "", "edited" if g.get("kind") == "edit" else ""]
+    prompt = g["prompt"]
+    title = prompt if len(prompt) <= 70 else prompt[:67].rsplit(" ", 1)[0] + "..."
+    return SHARE_HTML.format(
+        title=e(title), desc=e(f"Generated in {g['latency_ms'] / 1000:.1f} s on a laptop GPU with PocketDiffusion"),
+        og_image=e(f"{_origin(request)}/media/{g['image_path']}"), image=e(f"/media/{g['image_path']}"),
+        download=e(f"/media/{g.get('full_path') or g['image_path']}"), alt=e(prompt), prompt=e(prompt),
+        chips="".join(f"<span>{c}</span>" for c in chips if c), gid=e(gid), w=g["width"], h=g["height"])
+
+
+@app.get("/manifest.webmanifest")
+def manifest():
+    return FileResponse(FRONTEND / "manifest.webmanifest", media_type="application/manifest+json",
+                        headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/sw.js")
+def service_worker():
+    # served from the root so the worker's scope is the whole app
+    return FileResponse(FRONTEND / "sw.js", media_type="application/javascript",
+                        headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"})
 
 
 @app.get("/")

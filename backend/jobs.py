@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import io
 import json
+import math
 import queue
 import random
 import threading
@@ -16,12 +17,13 @@ import time
 import traceback
 import uuid
 from dataclasses import dataclass, field
+from dataclasses import fields as dc_fields
 from pathlib import Path
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageOps
 
-from pocketdiff.config import PRESETS
+from pocketdiff.config import PRESETS, GenConfig
 from pocketdiff.planner import Budget
 from pocketdiff.prompt_analyzer import resolve_output_size
 from pocketdiff.pipeline import PocketDiffusion, PromptRejected
@@ -40,6 +42,46 @@ def b64_jpeg(img01: np.ndarray, size: int = 256, quality: int = 70) -> str:
     buf = io.BytesIO()
     im.save(buf, format="JPEG", quality=quality)
     return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+
+
+def config_from_dict(d: dict) -> GenConfig:
+    """GenConfig stored as JSON (to_dict adds derived keys such as 'cfg') -> GenConfig."""
+    names = {f.name for f in dc_fields(GenConfig)}
+    return GenConfig(**{k: v for k, v in (d or {}).items() if k in names})
+
+
+MAX_UPLOAD_PIXELS = 40_000_000      # 40 MP: bigger uploads are rejected (decompression bombs)
+
+
+def decode_upload(data: str) -> Image.Image:
+    """'data:image/...;base64,...' (or bare base64) -> RGB PIL image, EXIF rotation applied."""
+    b64 = data.split(",", 1)[1] if data.startswith("data:") else data
+    try:
+        im = Image.open(io.BytesIO(base64.b64decode(b64)))
+    except Exception:
+        raise PromptRejected("The uploaded file is not an image PocketDiffusion can read (use JPEG, PNG or WebP).")
+    if im.width * im.height > MAX_UPLOAD_PIXELS:
+        raise PromptRejected("The uploaded image is too large (over 40 megapixels).")
+    return ImageOps.exif_transpose(im).convert("RGB")
+
+
+def edit_size(w: int, h: int, long_side: int = 512) -> tuple[int, int]:
+    """Working size for image-to-image: long side `long_side`, aspect kept, multiples of 8."""
+    s = long_side / max(w, h)
+    return max(128, int(round(w * s / 8)) * 8), max(128, int(round(h * s / 8)) * 8)
+
+
+def _image_saver(d: Path, gid: str):
+    def save(img, name, fmt="JPEG", size=None, quality=88):
+        if img is None:
+            return None
+        im = img if isinstance(img, Image.Image) else to_pil(img)
+        if size:
+            im = im.copy()
+            im.thumbnail((size, size))
+        im.save(d / name, format=fmt, **({"quality": quality} if fmt == "JPEG" else {}))
+        return f"{gid}/{name}"
+    return save
 
 
 def _jsonable(x):
@@ -125,6 +167,10 @@ class JobManager:
                     self._compare(job)
                 elif job.kind == "warmup":
                     self._warmup(job)
+                elif job.kind == "attention":
+                    self._attention(job)
+                elif job.kind == "edit":
+                    self._edit(job)
                 job.status = "done"
             except PromptRejected as e:
                 job.status = "error"
@@ -238,21 +284,125 @@ class JobManager:
                             "unet_evals": [base.config.unet_evals_per_image,
                                            opt.config.unet_evals_per_image * len(opt.candidates)]})
 
+    # ------------------------------------------------------------------ explain: attention maps
+    def _attention(self, job: Job) -> None:
+        """Cross-attention heat map per prompt word for a stored generation (cached on disk)."""
+        from pocketdiff.attention import attention_maps, overlay, segmentation
+
+        gid = job.params["gid"]
+        g = self.db.get(gid)
+        if g is None:
+            raise PromptRejected("This generation no longer exists.")
+        if g.get("kind") == "edit":
+            raise PromptRejected("Explain works for text-to-image results; this image was edited from a picture.")
+        cfg = config_from_dict(g.get("config") or {})
+        seed = next((c["seed"] for c in g.get("candidates") or [] if c.get("chosen")), g.get("seed") or 0)
+        job.emit("stage", {"name": "attention", "config": cfg.name})
+        res = attention_maps(self.pipeline().engine, g["prompt"], cfg, int(seed),
+                             negative_prompt=g.get("negative_prompt") or "")
+        d = self.store / gid / "attn"
+        d.mkdir(parents=True, exist_ok=True)
+        base = Image.open(self.store / g["image_path"]).convert("RGB")
+        base.thumbnail((768, 768))
+        save = _image_saver(d, f"{gid}/attn")
+        words = [{"word": w.word, "color": w.color, "share": round(w.share, 4), "tokens": len(w.positions),
+                  "image": save(overlay(base, w.heat), f"w{i}.jpg", quality=86)}
+                 for i, w in enumerate(res.words)]
+        out = {"id": gid, "words": words, "segmentation": save(segmentation(base, res.words), "seg.jpg", quality=86),
+               "layers": res.layers, "steps": res.steps, "ms": round(res.ms, 1), "latent": list(res.size),
+               "model": cfg.name, "seed": int(seed)}
+        (d / "attention.json").write_text(json.dumps(out), encoding="utf-8")
+        job.emit("result", out)
+
+    # ------------------------------------------------------------------ image-to-image editing
+    def _edit_source(self, p: dict) -> Image.Image:
+        if p.get("source_id"):
+            g = self.db.get(p["source_id"])
+            if g is None:
+                raise PromptRejected("The source image no longer exists.")
+            return Image.open(self.store / (g.get("full_path") or g["image_path"])).convert("RGB")
+        data = p.pop("image", None)                     # do not keep megabytes in the job registry
+        if not data:
+            raise PromptRejected("Upload an image (or pick one from the Gallery) to edit.")
+        return decode_upload(data)
+
+    def _edit(self, job: Job) -> None:
+        """Image-to-image (SDEdit): the picture is encoded, noised to `strength` and redrawn to match
+        the prompt. Low strength keeps composition and colours; high strength follows the prompt."""
+        from pocketdiff.planner import family_available
+        from pocketdiff.utils import cuda_available
+
+        p = job.params
+        pd = self.pipeline()
+        t0 = time.perf_counter()
+        analysis = pd.analyze(p["prompt"])
+        if not analysis.clean_prompt:
+            raise PromptRejected("Describe what the edited image should show.")
+        if analysis.blocked_terms:
+            raise PromptRejected(f"This prompt contains blocked terms ({', '.join(analysis.blocked_terms)}). "
+                                 "Please rephrase.")
+        job.emit("analysis", analysis.to_dict())
+        src = self._edit_source(p)
+        seed = int(p["seed"]) if p.get("seed") is not None else random.randint(0, 2**31 - 1)
+        strength = float(min(max(float(p.get("strength", 0.55)), 0.1), 1.0))
+        gpu = cuda_available()
+        base = PRESETS["turbo1_taesd"] if family_available("sd_turbo") else PRESETS["sd15_lcm4_taesd"]
+        w, h = edit_size(*src.size)
+        cfg = base.with_(name=f"{base.name}_img2img", steps=4, width=w, height=h,
+                         vae="full" if gpu else "taesd", device="cuda" if gpu else "cpu",
+                         dtype="fp16" if gpu else "fp32")
+        job.emit("stage", {"name": "denoise", "config": cfg.to_dict(), "n": 1})
+        src01 = np.asarray(src.resize((w, h), Image.LANCZOS), np.float32) / 255.0
+        img, ms = pd.engine.refine(src01, analysis.clean_prompt, cfg, (w, h), strength=strength,
+                                   steps=cfg.steps, seed=seed, exact=True)
+        timings = {"gen.denoise": ms}
+        events = [f"image-to-image: {src.size[0]}x{src.size[1]} source -> {w}x{h}, strength {strength:.2f} "
+                  f"(denoising from t={int(strength * 999)}, {math.ceil(strength * cfg.steps)} steps)"]
+        safety = None
+        if pd.scorer is not None:
+            ts = time.perf_counter()
+            safety = pd.scorer.safety([img])[0]
+            timings["safety"] = (time.perf_counter() - ts) * 1000
+            if safety["unsafe"]:
+                import cv2
+                img = cv2.GaussianBlur(img, (0, 0), 25)
+                events.append("Image-level safety check flagged the output -> blurred.")
+        clip = float(pd.scorer.clip_score([img], analysis.clean_prompt)[0]) if pd.scorer is not None else None
+        job.emit("stage", {"name": "saving"})
+        wall = (time.perf_counter() - t0) * 1000
+        gid = time.strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]
+        d = self.store / gid
+        d.mkdir(parents=True, exist_ok=True)
+        save = _image_saver(d, gid)
+        src.thumbnail((1024, 1024))
+        row = {
+            "id": gid, "created_at": time.time(), "kind": "edit", "prompt": analysis.clean_prompt,
+            "negative_prompt": None, "seed": seed, "device_profile": "this_gpu" if gpu else "this_cpu",
+            "mode": "edit", "family": cfg.family, "scheduler": cfg.scheduler, "steps": cfg.steps,
+            "steps_done": math.ceil(strength * cfg.steps), "width": w, "height": h, "quant": cfg.quant,
+            "decoder": cfg.vae, "text_encoder": cfg.text_encoder, "n_candidates": 1, "latency_ms": wall,
+            "gen_ms": ms, "clip": clip, "image_path": save(img, "final.png", "PNG"),
+            "raw_path": save(src, "source.jpg", quality=90),
+            "analysis_json": json.dumps(_jsonable(analysis.to_dict())),
+            "config_json": json.dumps(_jsonable(cfg.to_dict())),
+            "timings_json": json.dumps(_jsonable({**timings, "wall": wall})),
+            "metrics_json": json.dumps(_jsonable({"edit": {"strength": strength, "source_id": p.get("source_id")},
+                                                  "safety": safety})),
+            "events_json": json.dumps(events),
+        }
+        cands = [{"generation_id": gid, "idx": 0, "seed": seed, "clip": clip, "iqa": None, "score": None,
+                  "chosen": 1, "image_path": save(img, "cand_0.jpg", size=384)}]
+        self.db.insert_generation(row, cands, [], [])
+        job.result_id = gid
+        job.emit("result", self.db.get(gid))
+
     # ------------------------------------------------------------------ persistence
     def _save(self, job: Job, res, seed: int, wall_ms: float, kind: str = "generate") -> str:
         gid = time.strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]
         d = self.store / gid
         d.mkdir(parents=True, exist_ok=True)
 
-        def save(img, name, fmt="JPEG", size=None, quality=88):
-            if img is None:
-                return None
-            im = to_pil(img)
-            if size:
-                im.thumbnail((size, size))
-            path = d / name
-            im.save(path, format=fmt, **({"quality": quality} if fmt == "JPEG" else {}))
-            return f"{gid}/{name}"
+        save = _image_saver(d, gid)
 
         cfg = res.config
         v = res.verification or {}

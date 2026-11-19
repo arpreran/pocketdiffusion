@@ -206,6 +206,22 @@ The optimisations reduce generation time from 13.3 s to 155 ms (86×). Distillat
 
 ![Text-encoder distillation](results/plots/text_encoder_distillation.png)
 
+#### 9. Explainability: which words drew which pixels
+
+![Figure 9 – cross-attention maps per prompt word](results/report/fig9_explain_attention.jpg)
+
+<!-- AI-DRAFTED -->
+The Explain view re-runs a stored generation with the same seed and configuration while a recording attention processor captures the softmax weights of all 16 cross-attention layers of the UNet; the self-attention layers keep their fused SDPA kernel and the original processors are restored afterwards. The weights are averaged over heads, taken from the conditional branch, upsampled to the latent grid and summed over layers and steps. CLIP's BPE pieces are merged back into words and stop-words are dropped (the DAAM method of Tang et al., 2023). For "an astronaut riding a horse on the moon, cinematic lighting" the maps place "astronaut" on the rider, "horse" on the horse and "moon" on the ground and sky; "moon" dominates 35 % of the pixels and "astronaut" 4 %. The re-run costs one generation (404 ms for SD-Turbo at 512 px) and is cached on disk. It is also a diagnostic: a requested object whose word dominates no pixels has usually been dropped from the image.
+<!-- /AI-DRAFTED -->
+
+#### 10. Image-to-image editing at increasing strength
+
+![Figure 10 – the same scene redrawn as a watercolour at increasing strength](results/report/fig10_edit_strength.jpg)
+
+<!-- AI-DRAFTED -->
+An uploaded or stored image is encoded with the VAE, noised to timestep strength × 999 and denoised by SD-Turbo in ⌈4 × strength⌉ steps from that point (SDEdit). A custom timestep schedule makes the strength continuous; with a plain 4-step schedule it can only start at 249, 499, 749 or 999, and the visible change jumps from a retouch to a new picture. With the prompt asking for a watercolour of the same scene, strengths up to about 0.75 keep the pose, layout and lighting and redraw details, while the painted style takes over between 0.85 and 0.9. A warm edit takes 0.46–0.54 s at 512 px on the laptop GPU; the first edit after a restart takes 2.7 s because it loads the full VAE encoder.
+<!-- /AI-DRAFTED -->
+
 ### 3.3 Ablation Study
 
 #### A. Removing one component at a time (100 test prompts)

@@ -23,8 +23,22 @@ const SHORT = { this_gpu: "This GPU", flagship_phone: "Flagship", midrange_phone
 const TIMING_COLORS = { "analyse+plan": "#a78bfa", "gen.text_encode": "#f472b6", "gen.denoise": "#8b5cf6", "gen.decode": "#06b6d4",
   screen: "#22d3ee", rerank: "#34d399", semantic_rerank: "#10b981", postprocess: "#fbbf24", safety: "#fb7185" };
 
+// one-tap style presets: the suffix is appended to the prompt (the analyser recognises each style word)
+const STYLES = [
+  { key: "", label: "None", suffix: "" },
+  { key: "photo", label: "Photo", suffix: "professional photo, natural light, sharp focus, highly detailed" },
+  { key: "cinematic", label: "Cinematic", suffix: "cinematic film still, dramatic lighting, shallow depth of field" },
+  { key: "anime", label: "Anime", suffix: "anime style, cel shading, vibrant colors, clean line art" },
+  { key: "watercolor", label: "Watercolor", suffix: "watercolor painting, soft washes, paper texture" },
+  { key: "oil", label: "Oil painting", suffix: "oil painting, visible brush strokes, canvas texture" },
+  { key: "3d", label: "3D render", suffix: "3d render, soft studio lighting, high detail" },
+  { key: "pixel", label: "Pixel art", suffix: "pixel art, 16-bit, crisp pixels" },
+  { key: "sketch", label: "Sketch", suffix: "pencil sketch, graphite drawing, cross-hatching" },
+];
+
 const state = { sys: null, device: "this_gpu", mode: "quality", busy: false, result: null, view: "final",
-  gallery: { offset: 0, filter: "", q: "", total: 0 }, es: null, liveFrames: 0 };
+  gallery: { offset: 0, filter: "", q: "", total: 0 }, es: null, liveFrames: 0,
+  style: "", edit: null, explain: null, explainSel: -1 };
 
 /* ------------------------------------------------------------------ utils */
 async function api(path, opts = {}) {
@@ -134,12 +148,108 @@ $("#inspireBtn").addEventListener("click", () => {
   refreshPlan();
 });
 
+/* ------------------------------------------------------------------ style presets */
+function styledPrompt(p) {
+  const st = STYLES.find((s) => s.key === state.style);
+  if (!st || !st.suffix || !p.trim()) return p;
+  const head = st.suffix.split(",")[0].toLowerCase();
+  if (p.toLowerCase().includes(head)) return p;          // remixed prompt already carries the style
+  return `${p.replace(/[\s,.;]+$/, "")}, ${st.suffix}`;
+}
+function renderStyles() {
+  $("#styles").innerHTML = STYLES.map((s) => `<button type="button" role="radio" aria-checked="${s.key === state.style}"
+    class="${s.key === state.style ? "on" : ""}" data-style="${s.key}">${esc(s.label)}</button>`).join("");
+  const st = STYLES.find((s) => s.key === state.style);
+  $("#styleHint").textContent = st && st.suffix ? `+ “${st.suffix.split(",")[0]}…”` : "";
+  $("#styleHint").title = st && st.suffix ? `Added to the prompt: ${st.suffix}` : "";
+}
+$("#styles").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-style]");
+  if (!b) return;
+  state.style = b.dataset.style;
+  store.set("pd-style", state.style);
+  renderStyles();
+  refreshPlan();
+});
+state.style = STYLES.some((s) => s.key === store.get("pd-style", "")) ? store.get("pd-style", "") : "";
+renderStyles();
+
+/* ------------------------------------------------------------------ voice prompt (Web Speech API) */
+(function setupVoice() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const btn = $("#micBtn");
+  if (!SR || !window.isSecureContext) return;            // unsupported browser or plain http
+  btn.classList.remove("hidden");
+  let rec = null, base = "";
+  btn.addEventListener("click", () => {
+    if (rec) { rec.stop(); return; }
+    rec = new SR();
+    rec.lang = navigator.language || "en-US";
+    rec.interimResults = true;
+    rec.continuous = false;
+    base = $("#prompt").value.trim();
+    rec.onresult = (ev) => {
+      const said = [...ev.results].map((r) => r[0].transcript).join(" ").trim();
+      $("#prompt").value = base ? `${base} ${said}` : said;
+      refreshPlan();
+    };
+    rec.onerror = (ev) => { if (ev.error !== "aborted" && ev.error !== "no-speech") toast(`Voice input: ${ev.error}`, "warn"); };
+    rec.onend = () => { rec = null; btn.classList.remove("on"); btn.title = "Speak your prompt"; };
+    rec.start();
+    btn.classList.add("on");
+    btn.title = "Listening… click to stop";
+  });
+})();
+
+/* ------------------------------------------------------------------ image-to-image source */
+function setEditSource(src) {
+  state.edit = src;
+  const has = !!src;
+  $("#editSrc").classList.toggle("has", has);
+  $("#editEmpty").classList.toggle("hidden", has);
+  $("#editHas").classList.toggle("hidden", !has);
+  if (has) { $("#editThumb").src = src.thumb; $("#editName").textContent = src.name; }
+  $(".go-label", $("#goBtn")).textContent = state.busy ? (has ? "Editing…" : "Generating…") : (has ? "Edit image" : "Generate");
+}
+function loadUpload(file) {
+  if (!file || !file.type.startsWith("image/")) { toast("Choose an image file (JPEG, PNG or WebP).", "warn"); return; }
+  if (file.size > 25 * 2 ** 20) { toast("That image is over 25 MB — please pick a smaller one.", "warn"); return; }
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = () => {                                    // shrink on the device: smaller upload, EXIF-rotated
+    const s = Math.min(1, 1024 / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement("canvas");
+    c.width = Math.round(img.naturalWidth * s); c.height = Math.round(img.naturalHeight * s);
+    c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+    URL.revokeObjectURL(url);
+    const data = c.toDataURL("image/jpeg", 0.92);
+    setEditSource({ image: data, thumb: data, name: `${file.name} · ${img.naturalWidth}×${img.naturalHeight}` });
+  };
+  img.onerror = () => { URL.revokeObjectURL(url); toast("This image could not be read.", "err"); };
+  img.src = url;
+}
+function editFromGeneration(g) {
+  setEditSource({ source_id: g.id, thumb: media(g.image_path), name: `${g.width}×${g.height} · ${g.prompt}` });
+  showTab("studio");
+  $("#editSrc").scrollIntoView({ behavior: "smooth", block: "center" });
+  $("#prompt").focus();
+  toast("Now describe the change and press Edit image.");
+}
+$("#editSrc").addEventListener("click", (e) => { if (!state.edit && !e.target.closest("button")) $("#editFile").click(); });
+$("#editSrc").addEventListener("keydown", (e) => { if (!state.edit && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); $("#editFile").click(); } });
+$("#editFile").addEventListener("change", (e) => { loadUpload(e.target.files[0]); e.target.value = ""; });
+$("#editClear").addEventListener("click", (e) => { e.stopPropagation(); setEditSource(null); });
+["dragenter", "dragover"].forEach((t) => $("#editSrc").addEventListener(t, (e) => { e.preventDefault(); $("#editSrc").classList.add("drag"); }));
+["dragleave", "drop"].forEach((t) => $("#editSrc").addEventListener(t, (e) => { e.preventDefault(); $("#editSrc").classList.remove("drag"); }));
+$("#editSrc").addEventListener("drop", (e) => loadUpload(e.dataTransfer.files[0]));
+$("#strength").addEventListener("input", () => { $("#strengthOut").textContent = `${$("#strength").value}%`; });
+
 function settings() {
   const sz = $("#size").value;
   const [w, h] = sz === "auto" ? [0, 0] : sz.split("x").map(Number);   // 0 x 0 = size named in the prompt
   const seedVal = $("#seed").value.trim();
   return {
-    prompt: $("#prompt").value, device_profile: state.device, mode: state.mode, latency_ms: msFromSlider(),
+    prompt: styledPrompt($("#prompt").value), device_profile: state.device, mode: state.mode, latency_ms: msFromSlider(),
     memory_mb: +$("#memory").value, width: w, height: h, negative_prompt: $("#negative").value,
     seed: seedVal === "" ? null : Math.max(0, Math.min(2 ** 31 - 1, parseInt(seedVal, 10) || 0)),
     postprocess: $("#post").value, rerank: $("#rerank").checked, verify: $("#verify").checked,
@@ -219,7 +329,7 @@ function setBusy(b) {
   const go = $("#goBtn");
   go.disabled = b;
   go.classList.toggle("busy", b);
-  $(".go-label", go).textContent = b ? "Generating…" : "Generate";
+  $(".go-label", go).textContent = b ? (state.edit ? "Editing…" : "Generating…") : (state.edit ? "Edit image" : "Generate");
 }
 function resetRun() {
   $("#stageEmpty").classList.add("hidden");
@@ -236,14 +346,25 @@ function resetRun() {
 
 async function generate(overrides = {}) {
   if (state.busy) return;
-  const s = { ...settings(), ...overrides };
+  const { noEdit, ...ov } = overrides;
+  const s = { ...settings(), ...ov };
   if (!s.prompt.trim()) { toast("Please type a prompt first.", "warn"); $("#prompt").focus(); return; }
   if (s.preset === "planner") s.preset = null;
+  const ed = noEdit ? null : state.edit;
   setBusy(true);
   resetRun();
   showTab("studio");
   try {
-    const { job_id } = await api("/api/generate", { method: "POST", body: s });
+    let job_id;
+    if (ed) {                                   // image-to-image edit of an upload / a stored image
+      $("#liveImg").src = ed.thumb;
+      $("#liveImg").style.filter = "blur(6px) saturate(.9)";
+      ({ job_id } = await api("/api/edit", { method: "POST", body: {
+        prompt: s.prompt, strength: +$("#strength").value / 100, seed: s.seed,
+        ...(ed.source_id ? { source_id: ed.source_id } : { image: ed.image }) } }));
+    } else {
+      ({ job_id } = await api("/api/generate", { method: "POST", body: s }));
+    }
     listen(job_id);
   } catch (e) {
     toast(e.message, "err");
@@ -318,6 +439,11 @@ function renderResult(g) {
   } else {
     hd.classList.add("hidden");
   }
+  // edits: "Raw" is the original picture; artifacts / detections / explain are text-to-image views
+  const isEdit = g.kind === "edit";
+  $('#viewToggles [data-view="raw"]').textContent = isEdit ? "Original" : "Raw";
+  ["heat", "boxes", "explain"].forEach((v) => $(`#viewToggles [data-view="${v}"]`).classList.toggle("hidden", isEdit));
+  if (state.explain && state.explain.id !== g.id) { state.explain = null; state.explainSel = -1; }
   setView("final");
 
   // telemetry
@@ -399,6 +525,8 @@ function setView(v) {
   $("#splitRange").classList.add("hidden");
   $("#splitBar").style.display = "none";
   $("#boxes").innerHTML = "";
+  $("#explainBar").classList.toggle("hidden", v !== "explain");
+  if (v === "explain") { showExplain(g); return; }
   if (v === "final" || v === "boxes") A.src = media(g.image_path);
   if (v === "raw") A.src = media(g.raw_path);
   if (v === "heat") A.src = media(g.heatmap_path);
@@ -436,7 +564,57 @@ function drawBoxes() {
     return `<div class="bx ${wanted.has(d.label) ? "" : "fp"}" style="left:${r.ox + x0 * r.s}px;top:${r.oy + y0 * r.s}px;width:${(x1 - x0) * r.s}px;height:${(y1 - y0) * r.s}px"><span>${esc(d.label)} ${num(d.score, 2)}</span></div>`;
   }).join("");
 }
-$$("#viewToggles button").forEach((b) => b.addEventListener("click", () => setView(b.dataset.view)));
+/* Explain: cross-attention heat map per prompt word (computed once on the GPU, then cached) */
+async function showExplain(g) {
+  const bar = $("#explainBar"), A = $("#imgA");
+  if (state.explain && state.explain.id === g.id) { renderExplain(); return; }
+  A.src = media(g.image_path);
+  bar.innerHTML = `<span class="spin"></span><span class="lead">Reading the model's attention — re-running this image once with recording on…</span>`;
+  try {
+    const r = await api(`/api/generations/${g.id}/attention`, { method: "POST" });
+    if (state.result?.id !== g.id) return;            // user moved on to another image meanwhile
+    state.explain = r; state.explainSel = -1;
+    if (state.view === "explain") renderExplain();
+  } catch (e) {
+    if (state.result?.id !== g.id) return;
+    bar.innerHTML = `<span class="lead">Explain unavailable: ${esc(e.message)}</span>`;
+  }
+}
+function renderExplain() {
+  const r = state.explain, bar = $("#explainBar");
+  if (!r) return;
+  const sel = state.explainSel;
+  bar.innerHTML = `<span class="lead" title="${r.layers} cross-attention layers × ${r.steps} step(s) · ${fmtMs(r.ms)}">Which words drew what</span>
+    <button type="button" data-w="-1" class="${sel === -1 ? "on" : ""}" title="Every pixel coloured by the word that attends to it most">All words</button>` +
+    r.words.map((w, i) => `<button type="button" data-w="${i}" class="${sel === i ? "on" : ""}"
+      title="“${esc(w.word)}” dominates ${Math.round(w.share * 100)}% of the image"><i style="background:${w.color}"></i>${esc(w.word)}<small>${Math.round(w.share * 100)}%</small></button>`).join("");
+  $("#imgA").src = media(sel === -1 ? r.segmentation : r.words[sel].image);
+}
+$("#explainBar").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-w]");
+  if (!b || !state.explain) return;
+  state.explainSel = +b.dataset.w;
+  renderExplain();
+});
+
+/* Share: a link that keeps working - the permanent page forwards to whichever server link is live */
+function shareUrl(g) {
+  const pub = state.sys?.public_page;
+  return pub ? `${pub.replace(/\/?$/, "/")}?share=${g.id}` : `${location.origin}/share/${g.id}`;
+}
+async function shareGeneration(g) {
+  const url = shareUrl(g);
+  const data = { title: "PocketDiffusion", text: g.prompt, url };
+  if (navigator.share && matchMedia("(pointer: coarse)").matches) {
+    try { await navigator.share(data); return; } catch (e) { if (e.name === "AbortError") return; }
+  }
+  try { await navigator.clipboard.writeText(url); toast("Share link copied to the clipboard."); }
+  catch { window.prompt("Copy this share link:", url); }
+}
+$("#shareBtn").addEventListener("click", () => { if (state.result) shareGeneration(state.result); });
+$("#editBtn").addEventListener("click", () => { if (state.result) editFromGeneration(state.result); });
+
+$$("#viewToggles button[data-view]").forEach((b) => b.addEventListener("click", () => setView(b.dataset.view)));
 $("#splitRange").addEventListener("input", applySplit);
 window.addEventListener("resize", debounce(() => { if (state.view === "boxes") drawBoxes(); if (state.view === "split") applySplit(); }, 120));
 $("#rerollBtn").addEventListener("click", () => { $("#seed").value = Math.floor(Math.random() * 2 ** 31); generate(); });
@@ -479,7 +657,7 @@ function cardHtml(g) {
     <img loading="lazy" src="${media(g.image_path)}" alt="${esc(g.prompt)}">
     <button class="fav ${g.favorite ? "on" : ""}" data-fav="${esc(g.id)}" title="Favourite">${g.favorite ? "★" : "☆"}</button>
     <div class="meta"><p>${esc(g.prompt)}</p><div class="badges">
-      <span>${esc(FAMILY[g.family] || g.family)} · ${g.steps}st</span><span>${fmtMs(g.latency_ms)}</span>${g.clip != null ? `<span>CLIP ${num(g.clip, 1)}</span>` : ""}${g.object_f1 != null ? `<span>F1 ${num(g.object_f1, 2)}</span>` : ""}</div></div></div>`;
+      ${g.kind === "edit" ? "<span>✎ edit</span>" : ""}<span>${esc(FAMILY[g.family] || g.family)} · ${g.steps}st</span><span>${fmtMs(g.latency_ms)}</span>${g.clip != null ? `<span>CLIP ${num(g.clip, 1)}</span>` : ""}${g.object_f1 != null ? `<span>F1 ${num(g.object_f1, 2)}</span>` : ""}</div></div></div>`;
 }
 $("#gGrid").addEventListener("click", async (e) => {
   const fav = e.target.closest("[data-fav]");
@@ -518,11 +696,15 @@ async function openDetail(id) {
         <div class="strip cands" style="margin-top:12px">${(g.candidates || []).map((x) => `<figure class="${x.chosen ? "chosen" : ""}"><img src="${media(x.image_path)}" alt=""><figcaption>${x.chosen ? "✔ " : ""}${x.clip != null ? `CLIP ${num(x.clip, 1)}` : `seed ${x.seed}`}</figcaption></figure>`).join("")}</div>
         <div class="actions">
           <button class="btn primary" id="dRemix">Remix in Studio</button>
+          <button class="btn" id="dEdit" title="Use this image as the starting point of an edit">✎ Edit image</button>
+          <button class="btn" id="dShare">↗ Share</button>
           <button class="btn" id="dFav">${g.favorite ? "★ Unfavourite" : "☆ Favourite"}</button>
           <a class="btn" href="${media(g.full_path || g.image_path)}" download="pocketdiffusion-${esc(g.id)}-${g.width}x${g.height}.${(g.full_path || g.image_path).split(".").pop()}">Download ${g.width}×${g.height}</a>
           <button class="btn danger" id="dDel">Delete</button>
         </div></div></div>`);
     $("#dRemix").onclick = () => { remix(g); closeModal(); };
+    $("#dEdit").onclick = () => { closeModal(); editFromGeneration(g); };
+    $("#dShare").onclick = () => shareGeneration(g);
     $("#dFav").onclick = async () => { const r = await api(`/api/generations/${g.id}/favorite`, { method: "POST" }); $("#dFav").textContent = r.favorite ? "★ Unfavourite" : "☆ Favourite"; loadGallery(true); };
     $("#dDel").onclick = async () => {
       if (!confirm("Delete this generation and its images?")) return;
@@ -534,7 +716,7 @@ function remix(g) {
   $("#prompt").value = g.prompt;
   $("#seed").value = g.seed ?? "";
   $("#negative").value = g.negative_prompt || "";
-  if (g.mode) { state.mode = g.mode; $$("#modes button").forEach((b) => b.classList.toggle("on", b.dataset.mode === g.mode)); }
+  if (["auto", "fast", "balanced", "quality"].includes(g.mode)) { state.mode = g.mode; $$("#modes button").forEach((b) => b.classList.toggle("on", b.dataset.mode === g.mode)); }
   if (g.device_profile) { state.device = g.device_profile; $$(".device").forEach((b) => b.classList.toggle("on", b.dataset.dev === g.device_profile)); }
   if (g.latency_budget) setLatency(g.latency_budget);
   if (g.memory_budget) { $("#memory").value = g.memory_budget; updateSliderLabels(); }
@@ -712,8 +894,35 @@ $("#raceBtn").addEventListener("click", async () => {
   } catch (e) { toast(e.message, "err"); $("#raceBtn").disabled = false; }
 });
 
+/* ------------------------------------------------------------------ installable app (PWA) */
+if ("serviceWorker" in navigator && window.isSecureContext) {
+  window.addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => { /* optional */ }));
+}
+let installPrompt = null;
+window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installPrompt = e; $("#installBtn").classList.remove("hidden"); });
+window.addEventListener("appinstalled", () => { installPrompt = null; $("#installBtn").classList.add("hidden"); toast("PocketDiffusion installed — open it from your home screen."); });
+$("#installBtn").addEventListener("click", async () => {
+  if (!installPrompt) return;
+  installPrompt.prompt();
+  await installPrompt.userChoice.catch(() => null);
+  installPrompt = null;
+  $("#installBtn").classList.add("hidden");
+});
+
+/* ------------------------------------------------------------------ deep links: /?remix=<id>, /?g=<id> */
+async function openDeepLink() {
+  const q = new URLSearchParams(location.search);
+  const id = q.get("remix") || q.get("g");
+  if (!id || !/^[0-9]{8}-[0-9]{6}-[0-9a-f]{6}$/.test(id)) return;
+  history.replaceState(null, "", location.pathname + location.hash);
+  if (q.get("g")) { openDetail(id); return; }
+  try { remix(await api(`/api/generations/${id}`)); toast("Prompt loaded — press Generate to make your own version."); }
+  catch (e) { toast(`Shared image: ${e.message}`, "err"); }
+}
+
 /* ------------------------------------------------------------------ boot */
 updateSliderLabels();
 refreshSystem(true);
 setInterval(refreshSystem, 5000);
 showTab(location.hash.slice(1) || "studio");
+openDeepLink();

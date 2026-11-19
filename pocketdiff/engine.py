@@ -272,7 +272,8 @@ class DiffusionEngine:
 
     @torch.inference_mode()
     def refine(self, image01: np.ndarray, prompt: str, cfg: GenConfig, size: tuple[int, int],
-               strength: float = 0.5, steps: int = 2, seed: int = 0) -> tuple[np.ndarray, float]:
+               strength: float = 0.5, steps: int = 2, seed: int = 0,
+               exact: bool = False) -> tuple[np.ndarray, float]:
         """Diffusion detail pass for large outputs (image-to-image, "hires fix").
 
         The image is enlarged to `size` (about 2x native), encoded into the latent space, noised to
@@ -280,6 +281,10 @@ class DiffusionEngine:
         detail (raindrops, windows, fabric) that pure interpolation cannot invent, while the low
         frequencies - the composition - come from the original image. For SD-Turbo, 2 scheduler
         steps at strength 0.5 means a single UNet call. Returns (image, milliseconds).
+
+        `exact=True` (image-to-image editing): denoising starts exactly at timestep strength * T and
+        takes ceil(strength * steps) evenly spaced steps, so the strength slider is continuous instead
+        of snapping to the few start points of a short schedule (249 / 499 / 749 / 999 for 4 steps).
         """
         cfg = resolve_device(cfg)
         bundle = self.models.get(cfg)
@@ -299,11 +304,21 @@ class DiffusionEngine:
         emb = self.encode(bundle, [prompt])
 
         sched = make_scheduler(cfg.scheduler, bundle.scheduler_config)
-        sched.set_timesteps(steps, device=dev)
-        t_begin = steps - min(max(int(round(steps * strength)), 1), steps)
-        timesteps = sched.timesteps[t_begin * sched.order:]
-        if hasattr(sched, "set_begin_index"):
-            sched.set_begin_index(t_begin * sched.order)
+        if exact:
+            T = int(sched.config.num_train_timesteps)
+            s = min(max(float(strength), 0.02), 1.0)
+            k = max(1, int(np.ceil(s * steps)))
+            ts = sorted({int(round(v)) for v in np.linspace(s * (T - 1), 0, k + 1)[:-1]}, reverse=True)
+            sched.set_timesteps(timesteps=ts, device=dev)
+            timesteps = sched.timesteps
+            if hasattr(sched, "set_begin_index"):
+                sched.set_begin_index(0)
+        else:
+            sched.set_timesteps(steps, device=dev)
+            t_begin = steps - min(max(int(round(steps * strength)), 1), steps)
+            timesteps = sched.timesteps[t_begin * sched.order:]
+            if hasattr(sched, "set_begin_index"):
+                sched.set_begin_index(t_begin * sched.order)
         noise = torch.randn(lat0.shape, generator=torch.Generator("cpu").manual_seed(int(seed) + 7))
         lat = sched.add_noise(lat0, noise.to(dev, dtype), timesteps[:1])
         x0 = None

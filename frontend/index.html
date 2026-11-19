@@ -9,7 +9,12 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/styles.css?v=1.5">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#0b0b14">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="PocketDiffusion">
+  <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="/static/styles.css?v=1.6">
 </head>
 <body>
   <div class="aurora" aria-hidden="true"><span></span><span></span><span></span></div>
@@ -33,6 +38,7 @@
       <button class="tab" data-tab="about" role="tab">How it works</button>
     </nav>
     <div class="top-right">
+      <button class="install-btn hidden" id="installBtn" type="button" title="Install PocketDiffusion as an app on this device">⊕ Install app</button>
       <div class="status-pill" id="statusPill" title="Backend status">
         <span class="dot"></span><span id="statusText">connecting…</span>
       </div>
@@ -51,12 +57,35 @@
           <div class="field">
             <div class="label-row">
               <label for="prompt">Prompt</label>
+              <span class="grow"></span>
+              <button class="icon-btn sm mic-btn hidden" id="micBtn" type="button" title="Speak your prompt" aria-label="Speak your prompt"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4M9 21h6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
               <span class="token-ring" id="tokenRing" title="Prompt tokens. CLIP reads 77 at a time; long prompts are encoded in up to 3 chunks (225 tokens)"><svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="15" class="tr-bg"/><circle cx="18" cy="18" r="15" class="tr-fg" id="tokenArc"/></svg><span id="tokenCount">0</span></span>
             </div>
             <textarea id="prompt" rows="4" maxlength="1500" placeholder="Describe the image — objects, colours, positions, style…"></textarea>
             <div class="chips" id="sceneChips"><span class="chip ghost">scene graph appears as you type</span></div>
             <div class="complexity"><span>complexity</span><div class="meter"><i id="complexityBar"></i></div><b id="complexityLabel">–</b></div>
             <button class="ghost-btn" id="inspireBtn" type="button">✦ Inspire me</button>
+          </div>
+
+          <div class="field">
+            <div class="label-row"><label>Style</label><small class="muted" id="styleHint"></small></div>
+            <div class="style-chips" id="styles" role="radiogroup" aria-label="Style preset"></div>
+          </div>
+
+          <div class="field">
+            <div class="label-row"><label>Start from an image <small class="muted">(optional · edit)</small></label></div>
+            <div class="edit-src" id="editSrc" tabindex="0" role="button" aria-label="Upload an image to edit">
+              <input type="file" id="editFile" accept="image/*" hidden>
+              <div class="edit-empty" id="editEmpty"><b>Drop or choose a photo</b><span>it is redrawn to match the prompt (image-to-image)</span></div>
+              <div class="edit-has hidden" id="editHas">
+                <img id="editThumb" alt="image to edit">
+                <div class="edit-meta"><b id="editName">image</b>
+                  <div class="slider"><div class="label-row"><label for="strength">Change</label><output id="strengthOut">60%</output></div>
+                    <input type="range" id="strength" min="10" max="100" value="60"></div>
+                  <small class="muted">~40% retouch · ~70% redraw details · 90%+ new style</small></div>
+                <button class="icon-btn sm" id="editClear" type="button" title="Remove image" aria-label="Remove image">✕</button>
+              </div>
+            </div>
           </div>
 
           <div class="field">
@@ -127,17 +156,21 @@
                 <img id="imgA" alt="final output" class="layer top">
                 <div class="split-bar" id="splitBar"></div>
                 <div class="boxes" id="boxes"></div>
+                <div class="explain-bar hidden" id="explainBar" aria-live="polite"></div>
               </div>
               <input type="range" id="splitRange" min="0" max="100" value="50" class="split-range hidden" aria-label="before/after split">
               <div class="view-toggles" id="viewToggles">
                 <button data-view="final" class="on">Final</button>
                 <button data-view="raw">Raw</button>
                 <button data-view="split">Before | After</button>
+                <button data-view="explain" title="Which part of the image each word shaped (cross-attention)">Explain</button>
                 <button data-view="heat">Artifacts</button>
                 <button data-view="boxes">Detections</button>
                 <span class="grow"></span>
                 <a class="hd-download hidden" id="hdDownload" download title="Full-resolution file (the page shows a 2048-px preview)"></a>
                 <a class="icon-btn sm" id="downloadBtn" download title="Download">⤓</a>
+                <button class="icon-btn sm" id="shareBtn" title="Share a link to this image" aria-label="Share">↗</button>
+                <button class="icon-btn sm" id="editBtn" title="Edit this image with a new prompt" aria-label="Edit this image">✎</button>
                 <button class="icon-btn sm" id="rerollBtn" title="New seed, same settings">↻</button>
               </div>
             </div>
@@ -250,6 +283,9 @@
           <div><h4>Deep learning</h4><p>SD-Turbo (1 step) and SD1.5 + fused LCM-LoRA (2–8 steps), our own sampling loop, FP16, INT8/INT4 weight-only quantisation written from scratch, a 6-layer text encoder distilled from the 12-layer CLIP encoder, TAESD decoder, CLIP re-ranking, OWLv2 verification.</p></div>
           <div><h4>Classical computer vision</h4><p>Guided filter (from scratch), shades-of-gray white balance, adaptive gamma, CLAHE, saturation soft-knee, FFT detection of 8-px decoder grids + notch filter, Iterative Back-Projection super-resolution, NIQE from scratch, HSV colour naming inside detected boxes.</p></div>
           <div><h4>Full stack</h4><p>FastAPI backend with a single GPU worker and Server-Sent-Events streaming, SQLite (WAL) persistence for every generation, candidate, post-processing stage and denoising frame, and this framework-free frontend.</p></div>
+          <div><h4>Explainability</h4><p><b>Explain</b> re-runs an image with the UNet's 16 cross-attention layers recorded and shows, for every prompt word, which pixels it shaped (DAAM-style heat maps), plus a map that colours each pixel by its dominant word.</p></div>
+          <div><h4>Image-to-image editing</h4><p>Upload a photo or pick a result, describe the change and set how much may change: the picture is encoded by the VAE, noised to that strength and redrawn by SD-Turbo in 1–4 steps (SDEdit). Low strength keeps the layout; high strength follows the prompt.</p></div>
+          <div><h4>On your phone</h4><p>Installable web app (manifest + service worker, works offline for the app shell and saved images), voice prompts through the Web Speech API, one-tap style presets and share links that always reach the live server.</p></div>
         </div>
       </div>
     </section>
@@ -264,6 +300,6 @@
   </div>
   <div class="toasts" id="toasts" aria-live="polite"></div>
 
-  <script src="/static/app.js?v=1.5"></script>
+  <script src="/static/app.js?v=1.6"></script>
 </body>
 </html>

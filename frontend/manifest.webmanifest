@@ -1,0 +1,23 @@
+{
+  "name": "PocketDiffusion",
+  "short_name": "PocketDiffusion",
+  "description": "Resource-efficient text-to-image generation: sub-second images, live denoising, explainable results.",
+  "id": "/",
+  "start_url": "/#studio",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0b0b14",
+  "theme_color": "#0b0b14",
+  "categories": ["photo", "graphics", "productivity"],
+  "icons": [
+    { "src": "/static/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/static/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/static/icons/maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/static/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "New image", "url": "/#studio", "icons": [{ "src": "/static/icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Gallery", "url": "/#gallery", "icons": [{ "src": "/static/icons/icon-192.png", "sizes": "192x192" }] }
+  ]
+}

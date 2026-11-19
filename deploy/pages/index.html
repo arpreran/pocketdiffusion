@@ -74,12 +74,16 @@ async function probe(url, ms) {
     clearTimeout(timer);
   }
 }
+// share links: ?share=<generation id> opens that image's page on the live server
+const SHARE = (new URLSearchParams(location.search).get("share") || "").match(/^[0-9]{8}-[0-9]{6}-[0-9a-f]{6}$/);
 function go(url, s, where) {
   const gpu = s.gpu ? s.gpu.name.replace("NVIDIA GeForce ", "") : "CPU";
-  show("ok", "Live demo is running — opening it…", `${where} · ${gpu} · ${s.ready ? "ready" : "warming up"}`);
-  $("open").href = url;
+  const target = SHARE ? `${url}/share/${SHARE[0]}` : url;
+  show("ok", SHARE ? "Opening the shared image…" : "Live demo is running — opening it…",
+       `${where} · ${gpu} · ${s.ready ? "ready" : "warming up"}`);
+  $("open").href = target;
   $("open").classList.remove("hidden");
-  setTimeout(() => location.replace(url), 800);
+  setTimeout(() => location.replace(target), 800);
 }
 async function check() {
   show("checking", "Finding the live demo…", "Checking the team laptop (fastest) first.");

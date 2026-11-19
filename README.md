@@ -79,13 +79,13 @@ docker build -t pocketdiffusion . && docker run --gpus all -p 8000:8000 -v pdata
 
 | Layer | Technology | What it does |
 |---|---|---|
-| Frontend | `frontend/` — HTML, CSS, and vanilla JavaScript (no build step) | Provides the Studio interface with live denoising frames, planner previews, scene-graph chips, before/after comparison, artifact heat-map, detection boxes, and telemetry. It also includes Gallery, Lab, and Race views. |
+| Frontend | `frontend/` — HTML, CSS, and vanilla JavaScript (no build step) | Provides the Studio interface with live denoising frames, planner previews, scene-graph chips, before/after comparison, artifact heat-map, detection boxes, and telemetry, plus the Explain view (cross-attention maps per word), image-to-image editing, style presets, voice prompts and share links. It also includes Gallery, Lab, and Race views, and installs as a phone app (PWA). |
 | Backend | `backend/main.py` (FastAPI), `backend/jobs.py` | Provides REST API endpoints, input validation, a GPU worker thread, job queue, progress updates through Server-Sent Events, startup warm-up, and public tunnel support through `--share`. |
 | Database | `backend/db.py` (SQLite, WAL) | Stores generation history, plans, metrics, timings, candidates, post-processing stages, denoising frames, favourites, search data, and statistics. |
 
 API endpoints:
 
-`GET /api/system` · `POST /api/analyze` · `POST /api/plan` · `POST /api/generate` · `GET /api/jobs/{id}/events` (SSE) · `GET/DELETE /api/generations[/{id}]` · `POST /api/generations/{id}/favorite` · `GET /api/stats` · `GET /api/benchmarks` · `POST /api/compare`
+`GET /api/system` · `POST /api/analyze` · `POST /api/plan` · `POST /api/generate` · `GET /api/jobs/{id}/events` (SSE) · `GET/DELETE /api/generations[/{id}]` · `POST /api/generations/{id}/favorite` · `GET /api/stats` · `GET /api/benchmarks` · `POST /api/compare` · `POST /api/edit` · `POST /api/generations/{id}/attention` · `GET /share/{id}` · `GET /manifest.webmanifest` · `GET /sw.js`
 
 ---
 
@@ -131,6 +131,19 @@ The evaluation scripts generate the reported measurements rather than relying on
 | Advanced 6. Fallback for constrained devices | `planner.py`, `engine.fallback_chain` | Selects a lower-cost plan when the requested budget is infeasible. Runtime OOM fallback reduces candidate count, resolution, decoder cost, and precision, with CPU as a final fallback. |
 | Metrics | `eval/` | Measures CLIP (ViT-L/14), FID, KID, latency, peak memory, model size, quality-versus-cost, object F1, and NIQE. |
 
+### Extra features (v1.6)
+
+| Feature | Where | What it does |
+|---|---|---|
+| **Explain** (cross-attention maps) | `pocketdiff/attention.py` | Re-runs an image with the same seed while a recording processor captures the softmax of all 16 UNet cross-attention layers; shows per word which pixels it shaped, and a map colouring every pixel by its dominant word (DAAM-style). Cached per image; ≈0.4 s on the GPU. |
+| **Image-to-image editing** | `backend/jobs.py`, `engine.refine(exact=True)` | Upload a photo (or pick any result), describe the change, set the strength: VAE encode → noise to strength × 999 → SD-Turbo denoises in ⌈4 × strength⌉ steps (SDEdit), ≈0.5 s. "Before / After" compares with the original. |
+| **Style presets** | `frontend/app.js` | One tap adds a tested style suffix (Photo, Cinematic, Anime, Watercolor, Oil painting, 3D render, Pixel art, Sketch); the analyser recognises each style, e.g. anime turns off the photo-only checks. |
+| **Voice prompt** | `frontend/app.js` | Speak the prompt (Web Speech API, shown where the browser supports it). |
+| **Share links** | `GET /share/{id}`, `deploy/pages/index.html` | Each image gets a page with a link preview (Open Graph), download and "Remix this prompt". The link goes through the permanent GitHub Pages address, so it keeps working when the tunnel URL changes. |
+| **Installable phone app** | `frontend/manifest.webmanifest`, `frontend/sw.js` | "Install app" / "Add to Home Screen": standalone window, app icons, offline app shell and cached images; API calls always go to the network. |
+
+The v1.6 features were implemented with AI assistance (Claude).
+
 ---
 
 ## Project layout
@@ -139,7 +152,7 @@ The evaluation scripts generate the reported measurements rather than relying on
 serve.py                    One-command start of the full-stack app (--share for a public link)
 generate.py                 Command-line inference: prompts file -> images + log.json
 Solution_Report_P3.md       Solution report (hackathon template); check AI share: scripts/ai_share.py
-frontend/                   index.html, styles.css, app.js (the web UI)
+frontend/                   index.html, styles.css, app.js (the web UI), manifest + sw.js + icons (PWA)
 backend/                    main.py (FastAPI routes), jobs.py (GPU worker + SSE), db.py (SQLite)
 app.py                      Alternative Gradio interface
 
@@ -152,6 +165,7 @@ pocketdiff/
   pipeline.py               Orchestrator: plan -> generate -> screen -> re-rank -> post-process -> verify
   scoring.py                CLIP scoring (B/32 re-ranking, L/14 evaluation) + zero-shot safety check
   verifier.py               OWLv2 + HSV colour + geometry-based compositional verification
+  attention.py              Cross-attention recording -> per-word heat maps (Explain view)
   classical/                Filters, enhancement, artifact detection, IQA (NIQE), resizing, post-processor
 
 scripts/                    Asset download, data preparation, NIQE fitting, text-encoder distillation,

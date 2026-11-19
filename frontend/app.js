@@ -73,8 +73,9 @@ async function refreshSystem(first = false) {
     state.sys = s;
     const gpu = s.gpu ? s.gpu.name.replace("NVIDIA GeForce ", "") : (s.cloud ? "Cloud CPU (no GPU, ~10-30 s/image)" : "CPU");
     const q = s.queue ? ` · queue ${s.queue}` : "";
-    pill.className = "status-pill " + (s.ready ? "ok" : "");
-    $("#statusText").textContent = `${gpu} · ${s.ready ? "ready" : "warming up"}${q}`;
+    pill.className = "status-pill " + (s.ready ? "ok" : s.warmup_error ? "bad" : "");
+    $("#statusText").textContent = `${gpu} · ${s.ready ? "ready" : s.warmup_error ? "model load failed - retrying" : "warming up"}${q}`;
+    pill.title = s.warmup_error && !s.ready ? `Model warm-up error: ${s.warmup_error}` : pill.title;
     if (s.gpu_link) { pill.title = `Backup copy on a free CPU server. Fast GPU version: ${s.gpu_link}`; }
     if (first) initFromSystem(s);
   } catch {

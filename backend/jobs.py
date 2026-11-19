@@ -84,6 +84,7 @@ class JobManager:
         self.q: queue.Queue[Job] = queue.Queue(maxsize=32)
         self.pd: PocketDiffusion | None = None
         self.ready = threading.Event()
+        self.warmup_error: str | None = None
         self.busy_job: str | None = None
         self.worker = threading.Thread(target=self._loop, daemon=True, name="gpu-worker")
         self.worker.start()
@@ -136,9 +137,25 @@ class JobManager:
                 job.emit("end", {"status": job.status})
                 self.busy_job = None
 
-    def _warmup(self, job: Job) -> None:
+    def _warmup(self, job: Job, attempts: int = 3) -> None:
+        """Load and warm the models; retried, and a final failure is shown in the UI (not 'warming up' forever)."""
+        for i in range(1, attempts + 1):
+            try:
+                self._warmup_once(job)
+                self.warmup_error = None
+                return
+            except Exception as e:
+                self.warmup_error = f"{type(e).__name__}: {e}"
+                LOG.error("warm-up attempt %d/%d failed: %s\n%s", i, attempts, e, traceback.format_exc())
+                if i < attempts:
+                    time.sleep(5 * i)
+        raise RuntimeError(f"model warm-up failed {attempts} times: {self.warmup_error}")
+
+    def _warmup_once(self, job: Job) -> None:
         from pocketdiff.planner import family_available
+        from pocketdiff.preload import import_ml_libraries
         from pocketdiff.utils import cuda_available
+        import_ml_libraries()
         pd = self.pipeline()
         if cuda_available():   # per-shape kernel autotuning only matters on the GPU
             for name in ("turbo1_taesd", "sd15_lcm4_taesd"):

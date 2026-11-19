@@ -34,11 +34,16 @@ from pydantic import BaseModel, Field, field_validator
 
 from pocketdiff.config import DATA_DIR, DEVICE_PROFILES, MODEL_IDS, PRESETS, RESULTS_DIR, ROOT
 from pocketdiff.planner import Budget, Planner, family_available
+from pocketdiff.preload import import_ml_libraries
 from pocketdiff.prompt_analyzer import analyze_prompt
 from pocketdiff.utils import LOG
 
 from .db import Database
 from .jobs import JobManager
+
+# before the GPU worker and the tokenizer-preload thread exist: their concurrent lazy imports of
+# transformers/diffusers could otherwise fail ("cannot import name 'AutoModel' from 'transformers'")
+import_ml_libraries()
 
 FRONTEND = ROOT / "frontend"
 STORE = DATA_DIR / "store"
@@ -192,7 +197,7 @@ def system():
     pd = jobs.pd
     return {
         "app": "PocketDiffusion", "version": "1.0.0", "gpu": gpu, "torch": torch.__version__,
-        "ready": jobs.ready.is_set(), "queue": jobs.queue_length(),
+        "ready": jobs.ready.is_set(), "queue": jobs.queue_length(), "warmup_error": jobs.warmup_error,
         "loaded_models": pd.engine.models.loaded() if pd else [],
         "families": {f: family_available(f) for f in ("sd15", "sd_turbo")},
         "device_profiles": [{"key": k, "label": p.label, "kind": p.kind, "memory_budget_mb": p.memory_budget_mb,

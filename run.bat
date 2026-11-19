@@ -4,6 +4,7 @@ REM   run.bat            -> http://127.0.0.1:8000
 REM   run.bat --share    -> also prints a public https link for phones / judges
 REM   run.bat --share --publish-link -> + keeps https://arpreran.github.io/pocketdiffusion/ pointing at it
 REM   run.bat --gradio   -> the alternative Gradio interface (python app.py)
+REM   scripts\install_autostart.cmd  -> start the live server automatically at every Windows logon
 setlocal
 if exist "%~dp0.venv\Scripts\python.exe" (
     set PY="%~dp0.venv\Scripts\python.exe"

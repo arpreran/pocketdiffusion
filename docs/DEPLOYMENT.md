@@ -15,6 +15,12 @@ If the laptop is off, the page says the demo is offline and keeps retrying every
 Free hosts such as Render (512 MB RAM) or Vercel (short serverless functions, 250 MB) cannot run
 the ~5 GB diffusion model, so the model itself stays on the laptop GPU.
 
+### Auto-start at Windows logon
+`scripts\install_autostart.cmd` puts a launcher into the user's Startup folder (no admin rights).
+At every logon it waits for the internet, starts `serve.py --share --publish-link` in a minimized
+window "PocketDiffusion live" (log: `data/server.log`) and restarts the server 30 s after it stops.
+Close that window to stop it; remove with `scripts\install_autostart.cmd /remove`.
+
 ### Always-on cloud copy (Modal, free credits)
 `python -m modal deploy deploy/modal_app.py` builds an image with CUDA PyTorch and every model baked
 in and serves the same app on an NVIDIA T4 at https://arpreran--pocketdiffusion.us-east.modal.run.

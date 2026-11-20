@@ -76,6 +76,32 @@ def _tunnel_with_config(port: int, strategy: str) -> str:
 LIVE_URL_FILE = Path(__file__).resolve().parent / "data" / "live_url.txt"
 
 
+def kill_stale_tunnels(port: int) -> int:
+    """Stop frpc tunnel clients left behind by an earlier server process for this port.
+
+    When the server is stopped or crashes, Windows does not stop its frpc child, so old tunnels
+    pile up after every restart (each keeps a relay connection open). Called once at start-up,
+    before this process opens its own tunnel.
+    """
+    try:
+        import psutil
+    except ImportError:
+        return 0
+    n = 0
+    for pr in psutil.process_iter(["name", "cmdline"]):
+        try:
+            name = (pr.info["name"] or "").lower()
+            cmd = " ".join(pr.info["cmdline"] or [])
+            if name.startswith("frpc") and (f"-l {port} " in cmd + " " or "pocketdiff_frpc_" in cmd):
+                pr.kill()
+                n += 1
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    if n:
+        print(f"[share] stopped {n} stale tunnel client(s) from an earlier run", flush=True)
+    return n
+
+
 def open_tunnel(port: int, attempts: int = 6) -> str | None:
     """Expose the local server through Gradio's share relay (same mechanism as gradio --share).
 
@@ -190,6 +216,7 @@ def keep_tunnel_alive(port: int, interval: float = 60.0, publish: bool = False) 
     the permanent GitHub Pages address (see publish_live_url).
     """
     from gradio import tunneling
+    kill_stale_tunnels(port)
     url = open_tunnel(port)
     if url and publish:
         publish_live_url(url)

@@ -184,3 +184,23 @@ def test_edit_helpers():
 def test_pages_forwarder_supports_share_links():
     page = (Path(__file__).resolve().parents[1] / "deploy" / "pages" / "index.html").read_text(encoding="utf-8")
     assert "share" in page and "/share/" in page
+
+
+def test_offline_showcase_files_exist():
+    pages = Path(__file__).resolve().parents[1] / "deploy" / "pages"
+    sc = pages / "showcase" / "showcase.json"
+    if not sc.exists():
+        pytest.skip("showcase not built (python scripts/build_showcase.py)")
+    d = json.loads(sc.read_text(encoding="utf-8"))
+    paths = [d["video"]] if d.get("video") else []
+    for it in d["items"]:
+        assert it["prompt"] and it["latency_ms"] > 0
+        paths += [it["image"], it["thumb"]]
+        if it.get("explain"):
+            paths += [it["explain"]["segmentation"]] + [w["image"] for w in it["explain"]["words"]]
+    if d.get("edit"):
+        paths += [d["edit"]["source"], d["edit"]["result"]]
+    missing = [p for p in paths if not (pages / p).exists()]
+    assert not missing, missing
+    page = (pages / "index.html").read_text(encoding="utf-8")
+    assert "showcase/showcase.json" in page and "?showcase" in page

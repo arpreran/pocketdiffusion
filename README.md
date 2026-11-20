@@ -32,11 +32,9 @@ Full benchmark tables, ablation studies, and failure cases are documented in `ev
 
 **https://arpreran.github.io/pocketdiffusion/** — permanent demo address.
 
-The page opens the demo hosted on the team's RTX 4060 laptop when that machine is online. When the laptop is unavailable, the demo can use the cloud deployment:
+The page forwards to the demo running on the team's RTX 4060 laptop (it re-checks the current tunnel link, so the address never changes). The laptop has to be switched on, awake and online. When it is not, the page says so, reconnects by itself every 15 seconds, and meanwhile shows an **offline showcase**: real results with their prompts, models and timings, Explain heat maps, an image-to-image edit and a screen recording of the app. To see the showcase at any time: **https://arpreran.github.io/pocketdiffusion/?showcase**. It is rebuilt with `python scripts/build_showcase.py` and `scripts/record_walkthrough.py`.
 
-**https://arpreran--pocketdiffusion.us-east.modal.run**
-
-The cloud version runs on a serverless NVIDIA T4 through Modal. Its deployment configuration is available in `deploy/modal_app.py`.
+A serverless cloud copy is configured in `deploy/modal_app.py` (`https://arpreran--pocketdiffusion.us-east.modal.run`, CPU only). The page uses it as a backup when it is enabled; at the moment Modal has disabled the workspace, so it is not available.
 
 ---
 

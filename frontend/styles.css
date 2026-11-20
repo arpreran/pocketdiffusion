@@ -403,3 +403,5 @@ input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border-radius: 
   cursor: pointer; font: inherit; font-size: 13px; white-space: nowrap; }
 .install-btn:hover { border-color: var(--a1); }
 @media (max-width: 900px) { .install-btn { padding: 0 9px; } }
+/* live preview before the first denoising step: no broken-image alt text */
+#liveImg:not([src]) { visibility: hidden; }

@@ -1,0 +1,225 @@
+{
+ "items": [
+  {
+   "style": "Composition",
+   "prompt": "a red apple to the left of a green bottle on a wooden table, studio photo",
+   "model": "SD-Turbo",
+   "steps": 1,
+   "candidates": 4,
+   "latency_ms": 630,
+   "clip": 33.5,
+   "size": "512×512",
+   "image": "showcase/img/00.webp",
+   "thumb": "showcase/img/00_t.webp",
+   "explain": {
+    "segmentation": "showcase/img/00_seg.webp",
+    "words": [
+     {
+      "word": "apple",
+      "color": "#2ec4b6",
+      "share": 0.0278,
+      "image": "showcase/img/00_w0.webp"
+     },
+     {
+      "word": "bottle",
+      "color": "#8338ec",
+      "share": 0.1294,
+      "image": "showcase/img/00_w1.webp"
+     },
+     {
+      "word": "table",
+      "color": "#06d6a0",
+      "share": 0.0532,
+      "image": "showcase/img/00_w2.webp"
+     }
+    ]
+   }
+  },
+  {
+   "style": "Photo",
+   "prompt": "a corgi wearing sunglasses on a skateboard, golden hour",
+   "model": "SD-Turbo",
+   "steps": 1,
+   "candidates": 4,
+   "latency_ms": 809,
+   "clip": 39.0,
+   "size": "512×512",
+   "image": "showcase/img/01.webp",
+   "thumb": "showcase/img/01_t.webp",
+   "explain": {
+    "segmentation": "showcase/img/01_seg.webp",
+    "words": [
+     {
+      "word": "corgi",
+      "color": "#ff5a5f",
+      "share": 0.1917,
+      "image": "showcase/img/01_w0.webp"
+     },
+     {
+      "word": "sunglasses",
+      "color": "#ffbe0b",
+      "share": 0.0168,
+      "image": "showcase/img/01_w1.webp"
+     },
+     {
+      "word": "skateboard",
+      "color": "#3a86ff",
+      "share": 0.2078,
+      "image": "showcase/img/01_w2.webp"
+     }
+    ]
+   }
+  },
+  {
+   "style": "Photo",
+   "prompt": "a cozy wooden cabin in a snowy forest at night, warm light in the windows",
+   "model": "SD-Turbo",
+   "steps": 1,
+   "candidates": 4,
+   "latency_ms": 954,
+   "clip": 33.9,
+   "size": "512×512",
+   "image": "showcase/img/02.webp",
+   "thumb": "showcase/img/02_t.webp"
+  },
+  {
+   "style": "Cinematic",
+   "prompt": "a futuristic city skyline at dusk, neon reflections on wet streets, cinematic film still",
+   "model": "SD-Turbo",
+   "steps": 1,
+   "candidates": 4,
+   "latency_ms": 683,
+   "clip": 37.2,
+   "size": "512×512",
+   "image": "showcase/img/03.webp",
+   "thumb": "showcase/img/03_t.webp"
+  },
+  {
+   "style": "Portrait",
+   "prompt": "portrait photo of an elderly fisherman with a white beard, natural light, 85mm",
+   "model": "SD-Turbo",
+   "steps": 1,
+   "candidates": 4,
+   "latency_ms": 1495,
+   "clip": 36.4,
+   "size": "512×512",
+   "image": "showcase/img/04.webp",
+   "thumb": "showcase/img/04_t.webp"
+  },
+  {
+   "style": "Counting",
+   "prompt": "two cats sleeping on a blue couch next to a laptop",
+   "model": "SD-Turbo",
+   "steps": 1,
+   "candidates": 4,
+   "latency_ms": 563,
+   "clip": 35.6,
+   "size": "512×512",
+   "image": "showcase/img/05.webp",
+   "thumb": "showcase/img/05_t.webp"
+  },
+  {
+   "style": "Anime",
+   "prompt": "a girl with a red umbrella at a rainy train station, anime style, cel shading, vibrant colors, clean line art",
+   "model": "SD-Turbo",
+   "steps": 1,
+   "candidates": 4,
+   "latency_ms": 1082,
+   "clip": 43.7,
+   "size": "512×512",
+   "image": "showcase/img/06.webp",
+   "thumb": "showcase/img/06_t.webp"
+  },
+  {
+   "style": "Watercolor",
+   "prompt": "a lighthouse on a cliff above a stormy sea, watercolor painting, soft washes, paper texture",
+   "model": "SD-Turbo",
+   "steps": 1,
+   "candidates": 4,
+   "latency_ms": 630,
+   "clip": 33.2,
+   "size": "512×512",
+   "image": "showcase/img/07.webp",
+   "thumb": "showcase/img/07_t.webp"
+  },
+  {
+   "style": "Pixel art",
+   "prompt": "a tiny fox exploring a mushroom forest, pixel art, 16-bit, crisp pixels",
+   "model": "SD-Turbo",
+   "steps": 1,
+   "candidates": 4,
+   "latency_ms": 575,
+   "clip": 43.1,
+   "size": "512×512",
+   "image": "showcase/img/08.webp",
+   "thumb": "showcase/img/08_t.webp"
+  },
+  {
+   "style": "3D render",
+   "prompt": "a cute robot watering plants in a greenhouse, 3d render, soft studio lighting, high detail",
+   "model": "SD-Turbo",
+   "steps": 1,
+   "candidates": 4,
+   "latency_ms": 625,
+   "clip": 39.4,
+   "size": "512×512",
+   "image": "showcase/img/09.webp",
+   "thumb": "showcase/img/09_t.webp"
+  },
+  {
+   "style": "Oil painting",
+   "prompt": "a bowl of sunflowers on a windowsill, oil painting, visible brush strokes, canvas texture",
+   "model": "SD-Turbo",
+   "steps": 1,
+   "candidates": 4,
+   "latency_ms": 641,
+   "clip": 39.1,
+   "size": "512×512",
+   "image": "showcase/img/10.webp",
+   "thumb": "showcase/img/10_t.webp"
+  },
+  {
+   "style": "Cinematic",
+   "prompt": "an astronaut riding a horse on the moon, cinematic film still, dramatic lighting",
+   "model": "SD-Turbo",
+   "steps": 1,
+   "candidates": 4,
+   "latency_ms": 646,
+   "clip": 39.5,
+   "size": "512×512",
+   "image": "showcase/img/11.webp",
+   "thumb": "showcase/img/11_t.webp",
+   "explain": {
+    "segmentation": "showcase/img/11_seg.webp",
+    "words": [
+     {
+      "word": "astronaut",
+      "color": "#ff5a5f",
+      "share": 0.0425,
+      "image": "showcase/img/11_w0.webp"
+     },
+     {
+      "word": "horse",
+      "color": "#ffbe0b",
+      "share": 0.1455,
+      "image": "showcase/img/11_w1.webp"
+     },
+     {
+      "word": "moon",
+      "color": "#3a86ff",
+      "share": 0.3132,
+      "image": "showcase/img/11_w2.webp"
+     }
+    ]
+   }
+  }
+ ],
+ "edit": {
+  "prompt": "an astronaut riding a horse on the moon, watercolor painting, soft washes, paper texture",
+  "strength": 0.9,
+  "latency_ms": 979,
+  "source": "showcase/img/edit_source.webp",
+  "result": "showcase/img/edit_result.webp"
+ },
+ "video": "showcase/walkthrough.webp"
+}

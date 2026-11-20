@@ -5,22 +5,30 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PocketDiffusion – live demo</title>
 <meta name="description" content="Permanent link to the PocketDiffusion live demo (resource-efficient text-to-image generation, CV Hackathon 2026, P3).">
+<meta property="og:title" content="PocketDiffusion – text-to-image in under a second">
+<meta property="og:description" content="Resource-efficient text-to-image generation for mobile devices: live demo, sample results and the source code.">
+<meta property="og:image" content="https://arpreran.github.io/pocketdiffusion/showcase/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#0b0d17">
 <style>
-  :root { --bg: #0b0d17; --card: #141829; --line: #262b45; --text: #e8eaf6; --muted: #9aa0c3;
+  :root { --bg: #0b0d17; --card: #141829; --card2: #101425; --line: #262b45; --text: #e8eaf6; --muted: #9aa0c3;
           --a1: #8b5cf6; --a2: #06b6d4; --ok: #22c55e; --warn: #f59e0b; }
   * { box-sizing: border-box; }
-  body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px;
+  body { margin: 0; min-height: 100vh; color: var(--text); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
          background: radial-gradient(1200px 600px at 10% -10%, #2a1b5c 0, transparent 60%),
                      radial-gradient(900px 500px at 110% 110%, #073b4c 0, transparent 60%), var(--bg);
-         color: var(--text); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  .card { width: 100%; max-width: 560px; background: var(--card); border: 1px solid var(--line);
+         background-attachment: fixed; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 8vh 16px 48px; }
+  .card { width: 100%; max-width: 560px; margin: 0 auto; background: var(--card); border: 1px solid var(--line);
           border-radius: 18px; padding: 28px; box-shadow: 0 20px 60px rgba(0,0,0,.35); }
   h1 { margin: 0 0 4px; font-size: 26px; letter-spacing: -.02em;
        background: linear-gradient(90deg, var(--a1), var(--a2)); -webkit-background-clip: text;
        background-clip: text; color: transparent; }
   .sub { margin: 0 0 22px; color: var(--muted); font-size: 14px; }
   .status { display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; border-radius: 12px;
-            background: #0f1222; border: 1px solid var(--line); }
+            background: var(--card2); border: 1px solid var(--line); }
   .dot { flex: none; width: 12px; height: 12px; margin-top: 6px; border-radius: 50%; background: var(--muted); }
   .checking .dot { background: var(--a2); animation: pulse 1s infinite ease-in-out; }
   .ok .dot { background: var(--ok); }
@@ -29,15 +37,79 @@
   .status b { display: block; }
   .status small { color: var(--muted); }
   .links { margin-top: 20px; display: flex; flex-wrap: wrap; gap: 10px; }
-  a.btn { display: inline-block; padding: 10px 14px; border-radius: 10px; text-decoration: none;
-          color: var(--text); border: 1px solid var(--line); background: #1a1f36; font-size: 14px; }
-  a.btn.primary { border: 0; background: linear-gradient(90deg, var(--a1), var(--a2)); color: #fff; font-weight: 600; }
-  a.btn:hover { filter: brightness(1.15); }
-  .hidden { display: none; }
+  a.btn, button.btn { display: inline-block; padding: 10px 14px; border-radius: 10px; text-decoration: none; cursor: pointer;
+          color: var(--text); border: 1px solid var(--line); background: #1a1f36; font: inherit; font-size: 14px; }
+  .btn.primary { border: 0; background: linear-gradient(90deg, var(--a1), var(--a2)); color: #fff; font-weight: 600; }
+  .btn:hover { filter: brightness(1.15); }
+  .hidden { display: none !important; }
   footer { margin-top: 18px; font-size: 12px; color: var(--muted); }
+  footer a { color: var(--muted); }
+
+  /* ---------- offline showcase ---------- */
+  .showcase { margin-top: 44px; }
+  .sc-head { max-width: 760px; margin: 0 auto 22px; text-align: center; }
+  .sc-head h2 { margin: 0 0 6px; font-size: 28px; letter-spacing: -.02em; }
+  .sc-head p, .note { margin: 0; color: var(--muted); font-size: 14px; }
+  .showcase h3 { margin: 40px 0 6px; font-size: 20px; letter-spacing: -.01em; }
+  .showcase h3 + .note { margin-bottom: 14px; }
+  .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 0 0 28px; }
+  .stat { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+  .stat b { display: block; font-size: 26px; letter-spacing: -.02em; font-variant-numeric: tabular-nums;
+            background: linear-gradient(90deg, var(--a1), var(--a2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .stat span { color: var(--muted); font-size: 13px; }
+  figure { margin: 0; }
+  .walk { background: var(--card); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+  .walk img { display: block; width: 100%; height: auto; aspect-ratio: 960 / 570; background: var(--card2); }
+  .walk figcaption, .panel figcaption { padding: 12px 16px; color: var(--muted); font-size: 14px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
+  .tile { position: relative; padding: 0; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; cursor: pointer;
+          background: var(--card2); aspect-ratio: 1; color: #fff; font: inherit; text-align: left; }
+  .tile img { display: block; width: 100%; height: 100%; object-fit: cover; transition: transform .25s; }
+  .tile:hover img, .tile:focus-visible img { transform: scale(1.04); }
+  .tile:focus-visible { outline: 2px solid var(--a2); outline-offset: 2px; }
+  .tile .tag { position: absolute; left: 8px; right: 8px; bottom: 8px; display: flex; justify-content: space-between; gap: 6px;
+               font-size: 12px; pointer-events: none; }
+  .tile .tag span { padding: 3px 8px; border-radius: 999px; background: rgba(8, 10, 20, .72); backdrop-filter: blur(6px); }
+  .panel { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; align-items: start;
+           background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px; }
+  .panel .view { position: relative; border-radius: 12px; overflow: hidden; background: var(--card2); aspect-ratio: 1; }
+  .panel .view img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .panel p { margin: 0 0 10px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--card2);
+          color: var(--text); border-radius: 999px; padding: 5px 11px; font: inherit; font-size: 13px; cursor: pointer; }
+  .chip i { width: 9px; height: 9px; border-radius: 50%; }
+  .chip small { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .chip.on { border-color: transparent; background: linear-gradient(90deg, var(--a1), var(--a2)); color: #fff; }
+  .chip.on small { color: #eef; }
+  .thumbs { display: flex; gap: 8px; margin-top: 12px; }
+  .thumbs button { width: 64px; height: 64px; padding: 0; border-radius: 10px; overflow: hidden; border: 2px solid transparent; cursor: pointer; background: none; }
+  .thumbs button.on { border-color: var(--a2); }
+  .thumbs img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .meta { display: flex; flex-wrap: wrap; gap: 6px; }
+  .meta span { font: 12px ui-monospace, Consolas, monospace; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 3px 9px; }
+  .ba input { position: absolute; left: 10px; right: 10px; bottom: 10px; width: calc(100% - 20px); z-index: 3; accent-color: var(--a2); }
+  .ba .bar { position: absolute; top: 0; bottom: 0; width: 2px; background: #fff; left: 50%; z-index: 2; box-shadow: 0 0 10px rgba(0,0,0,.6); pointer-events: none; }
+  .ba .lbl { position: absolute; top: 10px; z-index: 2; font-size: 12px; padding: 3px 8px; border-radius: 999px; background: rgba(8,10,20,.72); }
+  .lightbox { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; padding: 16px; background: rgba(4, 5, 12, .86); backdrop-filter: blur(8px); }
+  .lb-card { position: relative; width: min(980px, 100%); max-height: calc(100vh - 32px); overflow: auto; display: grid;
+             grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 18px; background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px; }
+  .lb-card .view { position: relative; border-radius: 12px; overflow: hidden; background: var(--card2); aspect-ratio: 1; }
+  .lb-card .view img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .lb-card h4 { margin: 4px 0 10px; font-size: 18px; line-height: 1.35; }
+  .lb-nav { display: flex; gap: 8px; margin-top: 14px; }
+  .lb-close { position: absolute; top: 10px; right: 10px; width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--line);
+              background: var(--card2); color: var(--text); font-size: 18px; cursor: pointer; z-index: 2; }
+  @media (max-width: 820px) {
+    .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .panel, .lb-card { grid-template-columns: minmax(0, 1fr); }
+    .wrap { padding-top: 5vh; }
+  }
+  @media (prefers-reduced-motion: reduce) { .checking .dot { animation: none; } .tile img { transition: none; } }
 </style>
 </head>
 <body>
+<div class="wrap">
 <main class="card">
   <h1>PocketDiffusion</h1>
   <p class="sub">Resource-efficient text-to-image generation for mobile devices · Computer Vision Hackathon 2026, P3</p>
@@ -51,8 +123,73 @@
     <a id="open" class="btn primary hidden" href="#">Open the live demo</a>
     <a class="btn" href="https://github.com/arpreran/pocketdiffusion">Source code &amp; report (GitHub)</a>
   </div>
-  <footer id="foot">This page always opens the current demo link. The demo runs on the team's laptop GPU, so it is available while that laptop is switched on and online; a cloud copy is used as a backup when it is enabled.</footer>
+  <footer id="foot">This page always opens the current demo link. The demo runs on the team's laptop GPU, so it is available while that laptop is switched on and online; a cloud copy is used as a backup when it is enabled.
+    <a href="?showcase" id="showLink">See sample results</a></footer>
 </main>
+
+<section id="showcase" class="showcase hidden" aria-labelledby="scTitle">
+  <div class="sc-head">
+    <h2 id="scTitle">What PocketDiffusion makes</h2>
+    <p>Real results from the app on the team laptop (RTX 4060 Laptop GPU). Each time is end-to-end for one 512×512 image,
+      including best-of-N re-ranking, post-processing and the object check. Each picture was picked from a few seeds of its prompt.</p>
+  </div>
+  <div class="stats">
+    <div class="stat"><b>156×</b><span>faster than the SD1.5 baseline (85 ms vs 13.3 s of generation)</span></div>
+    <div class="stat"><b>26.7</b><span>CLIP-L score, baseline 26.4: same quality on 200 unseen COCO prompts</span></div>
+    <div class="stat"><b>941 MB</b><span>peak GPU memory with INT4 weights (baseline 5.07 GB)</span></div>
+    <div class="stat"><b id="statMed">–</b><span>median end-to-end time per image in this gallery, best-of-N and checks included</span></div>
+  </div>
+
+  <figure class="walk" id="walk">
+    <img id="walkImg" alt="Screen recording of the app: a prompt is typed, the image denoises live, Explain shows per-word heat maps, then the picture is edited into a watercolour" width="960" height="570" loading="lazy">
+    <figcaption>The app in action, in real time: typing a prompt, live denoising, Explain (which words drew which pixels), then editing the result with a new prompt.</figcaption>
+  </figure>
+
+  <h3>Gallery</h3>
+  <p class="note">Tap an image for its prompt, model and timing.</p>
+  <div class="grid" id="grid"></div>
+
+  <h3>Explain: which words drew which pixels</h3>
+  <p class="note">The app re-runs an image while recording the UNet's 16 cross-attention layers and shows where each word of the prompt acted.</p>
+  <figure class="panel" id="explain">
+    <div class="view"><img id="exImg" alt="Cross-attention heat map"></div>
+    <figcaption style="padding:0">
+      <p id="exPrompt"></p>
+      <div class="chips" id="exChips" role="group" aria-label="Prompt words"></div>
+      <span class="note" id="exNote"></span>
+      <div class="thumbs" id="exThumbs" role="group" aria-label="Choose an example"></div>
+    </figcaption>
+  </figure>
+
+  <h3>Edit a picture with a new prompt</h3>
+  <p class="note">Image-to-image: the picture is noised part of the way and redrawn to match the new prompt. Drag the slider to compare.</p>
+  <figure class="panel" id="edit">
+    <div class="view ba">
+      <img id="edSrc" alt="Original image">
+      <img id="edRes" alt="Edited image">
+      <span class="lbl" style="left:10px">original</span><span class="lbl" style="right:10px">edited</span>
+      <div class="bar" id="edBar"></div>
+      <input type="range" id="edRange" min="0" max="100" value="50" aria-label="Before and after divider">
+    </div>
+    <figcaption style="padding:0"><p id="edPrompt"></p><div class="meta" id="edMeta"></div></figcaption>
+  </figure>
+</section>
+</div>
+
+<div class="lightbox hidden" id="lb" role="dialog" aria-modal="true" aria-labelledby="lbPrompt">
+  <div class="lb-card">
+    <button class="lb-close" id="lbClose" aria-label="Close">✕</button>
+    <div class="view"><img id="lbImg" alt=""></div>
+    <div>
+      <span class="note" id="lbStyle"></span>
+      <h4 id="lbPrompt"></h4>
+      <div class="meta" id="lbMeta"></div>
+      <div class="chips" id="lbChips"></div>
+      <div class="lb-nav"><button class="btn" id="lbPrev">← Previous</button><button class="btn" id="lbNext">Next →</button></div>
+    </div>
+  </div>
+</div>
+
 <script>
 const $ = (id) => document.getElementById(id);
 function show(cls, title, detail) {
@@ -62,6 +199,8 @@ function show(cls, title, detail) {
 }
 // Always-on cloud copy (Modal, serverless NVIDIA T4): used when the team laptop is offline.
 const CLOUD_URL = "https://arpreran--pocketdiffusion.us-east.modal.run";
+const PARAMS = new URLSearchParams(location.search);
+const SHOWCASE = PARAMS.has("showcase");          // ?showcase: stay on this page and show the results
 
 async function probe(url, ms) {
   const ctl = new AbortController();
@@ -75,16 +214,21 @@ async function probe(url, ms) {
   }
 }
 // share links: ?share=<generation id> opens that image's page on the live server
-const SHARE = (new URLSearchParams(location.search).get("share") || "").match(/^[0-9]{8}-[0-9]{6}-[0-9a-f]{6}$/);
+const SHARE = (PARAMS.get("share") || "").match(/^[0-9]{8}-[0-9]{6}-[0-9a-f]{6}$/);
 function go(url, s, where) {
   const gpu = s.gpu ? s.gpu.name.replace("NVIDIA GeForce ", "") : "CPU";
   const target = SHARE ? `${url}/share/${SHARE[0]}` : url;
-  show("ok", SHARE ? "Opening the shared image…" : "Live demo is running — opening it…",
-       `${where} · ${gpu} · ${s.ready ? "ready" : "warming up"}`);
   $("open").href = target;
   $("open").onclick = null;
   $("open").textContent = "Open the live demo";
   $("open").classList.remove("hidden");
+  if (SHOWCASE) {                                  // visitor asked for the results: do not redirect
+    show("ok", "The live demo is running", `${where} · ${gpu} · ${s.ready ? "ready" : "warming up"} · use the button to open it`);
+    loadShowcase();
+    return;
+  }
+  show("ok", SHARE ? "Opening the shared image…" : "Live demo is running — opening it…",
+       `${where} · ${gpu} · ${s.ready ? "ready" : "warming up"}`);
   setTimeout(() => location.replace(target), 800);
 }
 async function check() {
@@ -101,14 +245,129 @@ async function check() {
   try { return go(cloud, await probe(cloud, 180000), "cloud"); } catch {}
   show("off", "The demo laptop is asleep or offline right now",
        "PocketDiffusion runs on the team's laptop GPU. Keep this page open: it checks every 15 seconds " +
-       "and opens the demo by itself as soon as the laptop is back online.");
+       "and opens the demo by itself as soon as the laptop is back online. Meanwhile, real results are shown below.");
   $("open").classList.remove("hidden");
   $("open").textContent = "Try again now";
   $("open").href = "#";
   $("open").onclick = (e) => { e.preventDefault(); clearTimeout(retry); check(); };
+  loadShowcase();
   retry = setTimeout(check, 15000);
 }
 let retry = null;
+
+/* ------------------------------------------------------------------ showcase */
+let SC = null, scLoading = null, lbIndex = 0, lbWord = -1;
+const ms = (v) => (v >= 1000 ? `${(v / 1000).toFixed(2)} s` : `${Math.round(v)} ms`);
+function el(tag, attrs = {}, text) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  if (text != null) e.textContent = text;
+  return e;
+}
+function metaChips(box, it) {
+  box.replaceChildren(...[`${it.model} · ${it.steps} step${it.steps > 1 ? "s" : ""}`, ms(it.latency_ms),
+    it.candidates > 1 ? `best of ${it.candidates}` : null, it.clip != null ? `CLIP ${it.clip}` : null, it.size]
+    .filter(Boolean).map((t) => el("span", {}, t)));
+}
+function wordChips(box, ex, sel, onPick, allLabel = "All words") {
+  const all = el("button", { type: "button", class: "chip" + (sel === -1 ? " on" : "") }, allLabel);
+  all.onclick = () => onPick(-1);
+  const chips = ex.words.map((w, i) => {
+    const b = el("button", { type: "button", class: "chip" + (sel === i ? " on" : "") });
+    const dot = el("i"); dot.style.background = w.color;
+    b.append(dot, document.createTextNode(w.word), el("small", {}, `${Math.round(w.share * 100)}%`));
+    b.title = `“${w.word}” dominates ${Math.round(w.share * 100)}% of the image`;
+    b.onclick = () => onPick(i);
+    return b;
+  });
+  box.replaceChildren(all, ...chips);
+}
+function loadShowcase() {
+  if (scLoading) return scLoading;
+  $("showcase").classList.remove("hidden");
+  $("showLink").classList.add("hidden");
+  scLoading = fetch("showcase/showcase.json", { cache: "no-cache" }).then((r) => r.json()).then((d) => {
+    SC = d;
+    const t = d.items.map((x) => x.latency_ms).sort((a, b) => a - b);
+    if (t.length) $("statMed").textContent = ms(t[Math.floor(t.length / 2)]);
+    if (d.video) $("walkImg").src = d.video; else $("walk").classList.add("hidden");
+    $("grid").replaceChildren(...d.items.map((it, i) => {
+      const b = el("button", { type: "button", class: "tile", "aria-label": `${it.style}: ${it.prompt}` });
+      b.append(el("img", { src: it.thumb, alt: it.prompt, loading: "lazy", width: 384, height: 384 }));
+      const tag = el("span", { class: "tag" });
+      tag.append(el("span", {}, it.style), el("span", {}, ms(it.latency_ms)));
+      b.append(tag);
+      b.onclick = () => openLb(i);
+      return b;
+    }));
+    const exItems = d.items.map((it, i) => [it, i]).filter(([it]) => it.explain);
+    if (exItems.length) renderExplain(exItems, exItems.length - 1, -1); else $("explain").classList.add("hidden");
+    if (d.edit) renderEdit(d.edit); else $("edit").classList.add("hidden");
+  }).catch(() => { $("showcase").classList.add("hidden"); });
+  return scLoading;
+}
+function renderExplain(exItems, k, sel) {
+  const [it] = exItems[k], ex = it.explain;
+  $("exImg").src = sel === -1 ? ex.segmentation : ex.words[sel].image;
+  $("exPrompt").textContent = `“${it.prompt}”`;
+  $("exNote").textContent = sel === -1 ? "Every pixel is coloured by the word that attends to it most."
+    : `Bright = where “${ex.words[sel].word}” shaped the image.`;
+  wordChips($("exChips"), ex, sel, (i) => renderExplain(exItems, k, i));
+  $("exThumbs").replaceChildren(...exItems.map(([x], j) => {
+    const b = el("button", { type: "button", class: j === k ? "on" : "", "aria-label": x.prompt });
+    b.append(el("img", { src: x.thumb, alt: "" }));
+    b.onclick = () => renderExplain(exItems, j, -1);
+    return b;
+  }));
+}
+function renderEdit(e) {
+  $("edSrc").src = e.source;
+  $("edRes").src = e.result;
+  $("edPrompt").textContent = `New prompt: “${e.prompt}”`;
+  $("edMeta").replaceChildren(...[`strength ${e.strength}`, ms(e.latency_ms), "SD-Turbo img2img"].map((t) => el("span", {}, t)));
+  const apply = () => {
+    const v = +$("edRange").value;
+    $("edRes").style.clipPath = `inset(0 0 0 ${v}%)`;
+    $("edBar").style.left = `${v}%`;
+  };
+  $("edRange").oninput = apply;
+  apply();
+}
+function openLb(i) {
+  lbIndex = (i + SC.items.length) % SC.items.length;
+  lbWord = -2;                                      // -2: the picture itself
+  renderLb();
+  $("lb").classList.remove("hidden");
+  $("lbClose").focus();
+}
+function renderLb() {
+  const it = SC.items[lbIndex];
+  $("lbImg").src = lbWord === -2 ? it.image : lbWord === -1 ? it.explain.segmentation : it.explain.words[lbWord].image;
+  $("lbImg").alt = it.prompt;
+  $("lbStyle").textContent = `${it.style} · ${lbIndex + 1} of ${SC.items.length}`;
+  $("lbPrompt").textContent = it.prompt;
+  metaChips($("lbMeta"), it);
+  if (it.explain) {
+    wordChips($("lbChips"), it.explain, lbWord, (w) => { lbWord = w; renderLb(); }, "Explain: all words");
+    const pic = el("button", { type: "button", class: "chip" + (lbWord === -2 ? " on" : "") }, "Picture");
+    pic.onclick = () => { lbWord = -2; renderLb(); };
+    $("lbChips").prepend(pic);
+  } else {
+    $("lbChips").replaceChildren();
+  }
+}
+function closeLb() { $("lb").classList.add("hidden"); }
+$("lbClose").onclick = closeLb;
+$("lb").addEventListener("click", (e) => { if (e.target.id === "lb") closeLb(); });
+$("lbPrev").onclick = () => openLb(lbIndex - 1);
+$("lbNext").onclick = () => openLb(lbIndex + 1);
+document.addEventListener("keydown", (e) => {
+  if ($("lb").classList.contains("hidden")) return;
+  if (e.key === "Escape") closeLb();
+  if (e.key === "ArrowLeft") openLb(lbIndex - 1);
+  if (e.key === "ArrowRight") openLb(lbIndex + 1);
+});
+if (SHOWCASE) loadShowcase();
 check();
 </script>
 </body>

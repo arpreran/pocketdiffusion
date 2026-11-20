@@ -1,0 +1,56 @@
+{
+ "items": [
+  {
+   "style": "Composition",
+   "id": "20261120-172035-fa2f46"
+  },
+  {
+   "style": "Photo",
+   "id": "20261120-171946-7d5744"
+  },
+  {
+   "style": "Photo",
+   "id": "20261120-171948-64f339"
+  },
+  {
+   "style": "Cinematic",
+   "id": "20261120-171950-1fbe98"
+  },
+  {
+   "style": "Portrait",
+   "id": "20261120-171952-9bd043"
+  },
+  {
+   "style": "Counting",
+   "id": "20261120-172142-47b922"
+  },
+  {
+   "style": "Anime",
+   "id": "20261120-171955-2242b1"
+  },
+  {
+   "style": "Watercolor",
+   "id": "20261120-171956-a16cbb"
+  },
+  {
+   "style": "Pixel art",
+   "id": "20261120-172051-718bd1"
+  },
+  {
+   "style": "3D render",
+   "id": "20261120-171959-c0aa0f"
+  },
+  {
+   "style": "Oil painting",
+   "id": "20261120-172000-91cf24"
+  },
+  {
+   "style": "Cinematic",
+   "id": "20261120-172002-de7f33"
+  }
+ ],
+ "edit": {
+  "id": "20261120-172236-4dcd36",
+  "source_id": "20261120-172002-de7f33"
+ }
+}

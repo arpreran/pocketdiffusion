@@ -117,6 +117,10 @@ function initFromSystem(s) {
   $("#preset").innerHTML = `<option value="planner">Adaptive planner</option>` +
     s.presets.map((p) => `<option value="${esc(p.key)}">${esc(p.key)} — ${esc(p.description)}</option>`).join("");
   if (!$("#prompt").value) { $("#prompt").value = s.examples[0]; }
+  if ((s.features || []).includes("preview")) {          // GPU server: offer the live preview
+    $("#liveToggle").classList.remove("hidden");
+    $("#livePreview").checked = livePrev.on = store.get("pd-live", "0") === "1";
+  }
   refreshPlan();
 }
 
@@ -170,6 +174,7 @@ $("#styles").addEventListener("click", (e) => {
   store.set("pd-style", state.style);
   renderStyles();
   refreshPlan();
+  runLivePreview();
 });
 state.style = STYLES.some((s) => s.key === store.get("pd-style", "")) ? store.get("pd-style", "") : "";
 renderStyles();
@@ -200,6 +205,41 @@ renderStyles();
     btn.title = "Listening… click to stop";
   });
 })();
+
+/* ------------------------------------------------------------------ live preview while typing */
+const livePrev = { seq: 0, on: false };
+const runLivePreview = debounce(async () => {
+  if (!livePrev.on || state.busy || state.edit) return;
+  const prompt = styledPrompt($("#prompt").value);
+  if (!prompt.trim()) return;
+  const seq = ++livePrev.seq;
+  const seedVal = $("#seed").value.trim();
+  try {
+    const r = await api("/api/preview", { method: "POST", body: { prompt, seed: seedVal === "" ? null : Math.max(0, parseInt(seedVal, 10) || 0) } });
+    if (seq !== livePrev.seq || !livePrev.on || state.busy || !r || r.busy || r.superseded || !r.image) return;
+    $("#stageEmpty").classList.add("hidden");
+    $("#stageFinal").classList.add("hidden");
+    $("#stageLive").classList.remove("hidden");
+    $("#stageLive").classList.add("previewing");
+    $("#liveImg").src = r.image;
+    $("#liveImg").style.filter = "none";
+    $("#liveBadge").textContent = `live preview · 1 step · ${fmtMs(r.gen_ms)} — press Generate for the full pipeline`;
+    $("#liveBadge").classList.remove("hidden");
+  } catch (e) {
+    if (/blocked/i.test(e.message)) toast(e.message, "warn");
+  }
+}, 320);
+$("#livePreview").addEventListener("change", (e) => {
+  livePrev.on = e.target.checked;
+  store.set("pd-live", livePrev.on ? "1" : "0");
+  if (livePrev.on) runLivePreview();
+  else if ($("#stageLive").classList.contains("previewing")) {
+    $("#stageLive").classList.add("hidden");
+    $("#stageLive").classList.remove("previewing");
+    $(state.result ? "#stageFinal" : "#stageEmpty").classList.remove("hidden");
+  }
+});
+$("#prompt").addEventListener("input", () => runLivePreview());
 
 /* ------------------------------------------------------------------ image-to-image source */
 function setEditSource(src) {
@@ -332,6 +372,9 @@ function setBusy(b) {
   $(".go-label", go).textContent = b ? (state.edit ? "Editing…" : "Generating…") : (state.edit ? "Edit image" : "Generate");
 }
 function resetRun() {
+  livePrev.seq++;                                   // ignore live previews still in flight
+  $("#stageLive").classList.remove("previewing");
+  $("#liveBadge").classList.add("hidden");
   $("#stageEmpty").classList.add("hidden");
   $("#stageFinal").classList.add("hidden");
   $("#stageLive").classList.remove("hidden");
@@ -643,11 +686,11 @@ async function loadGallery(reset = false) {
   else if (G.filter) p.set("family", G.filter);
   if (G.q) p.set("q", G.q);
   try {
-    const { items, total } = await api(`/api/generations?${p}`);
+    const { items, total, everyone } = await api(`/api/generations?${p}`);
     G.total = total;
     G.offset += items.length;
-    $("#gCount").textContent = `${total} image${total === 1 ? "" : "s"}`;
-    if (!total) { $("#gGrid").innerHTML = `<div class="empty-state">No generations yet — create one in the Studio.</div>`; }
+    $("#gCount").textContent = `${total} image${total === 1 ? "" : "s"} · ${everyone ? "team view: every visitor's images" : "only you can see these (this browser)"}`;
+    if (!total) { $("#gGrid").innerHTML = `<div class="empty-state">No images yet — create one in the Studio. Your images stay private to this browser unless you share a link.</div>`; }
     $("#gGrid").insertAdjacentHTML("beforeend", items.map(cardHtml).join(""));
     $("#gMore").classList.toggle("hidden", G.offset >= total);
   } catch (e) { toast(`Gallery: ${e.message}`, "err"); }
@@ -655,7 +698,7 @@ async function loadGallery(reset = false) {
 function cardHtml(g) {
   return `<div class="gcard" data-id="${esc(g.id)}">
     <img loading="lazy" src="${media(g.image_path)}" alt="${esc(g.prompt)}">
-    <button class="fav ${g.favorite ? "on" : ""}" data-fav="${esc(g.id)}" title="Favourite">${g.favorite ? "★" : "☆"}</button>
+    ${g.mine === false ? "" : `<button class="fav ${g.favorite ? "on" : ""}" data-fav="${esc(g.id)}" title="Favourite">${g.favorite ? "★" : "☆"}</button>`}
     <div class="meta"><p>${esc(g.prompt)}</p><div class="badges">
       ${g.kind === "edit" ? "<span>✎ edit</span>" : ""}<span>${esc(FAMILY[g.family] || g.family)} · ${g.steps}st</span><span>${fmtMs(g.latency_ms)}</span>${g.clip != null ? `<span>CLIP ${num(g.clip, 1)}</span>` : ""}${g.object_f1 != null ? `<span>F1 ${num(g.object_f1, 2)}</span>` : ""}</div></div></div>`;
 }
@@ -698,15 +741,15 @@ async function openDetail(id) {
           <button class="btn primary" id="dRemix">Remix in Studio</button>
           <button class="btn" id="dEdit" title="Use this image as the starting point of an edit">✎ Edit image</button>
           <button class="btn" id="dShare">↗ Share</button>
-          <button class="btn" id="dFav">${g.favorite ? "★ Unfavourite" : "☆ Favourite"}</button>
+          ${g.mine === false ? "" : `<button class="btn" id="dFav">${g.favorite ? "★ Unfavourite" : "☆ Favourite"}</button>`}
           <a class="btn" href="${media(g.full_path || g.image_path)}" download="pocketdiffusion-${esc(g.id)}-${g.width}x${g.height}.${(g.full_path || g.image_path).split(".").pop()}">Download ${g.width}×${g.height}</a>
-          <button class="btn danger" id="dDel">Delete</button>
+          ${g.mine === false ? "" : `<button class="btn danger" id="dDel">Delete</button>`}
         </div></div></div>`);
     $("#dRemix").onclick = () => { remix(g); closeModal(); };
     $("#dEdit").onclick = () => { closeModal(); editFromGeneration(g); };
     $("#dShare").onclick = () => shareGeneration(g);
-    $("#dFav").onclick = async () => { const r = await api(`/api/generations/${g.id}/favorite`, { method: "POST" }); $("#dFav").textContent = r.favorite ? "★ Unfavourite" : "☆ Favourite"; loadGallery(true); };
-    $("#dDel").onclick = async () => {
+    if ($("#dFav")) $("#dFav").onclick = async () => { const r = await api(`/api/generations/${g.id}/favorite`, { method: "POST" }); $("#dFav").textContent = r.favorite ? "★ Unfavourite" : "☆ Favourite"; loadGallery(true); };
+    if ($("#dDel")) $("#dDel").onclick = async () => {
       if (!confirm("Delete this generation and its images?")) return;
       try { await api(`/api/generations/${g.id}`, { method: "DELETE" }); closeModal(); toast("Deleted."); loadGallery(true); } catch (err) { toast(err.message, "err"); }
     };
@@ -728,7 +771,8 @@ function remix(g) {
 /* ------------------------------------------------------------------ SVG charts */
 const LABELS = { baseline: "Baseline FP32·50", sd15_fp16: "+FP16", sd15_fp16_dpm20: "+DPM++20", sd15_lcm4: "+LCM 4", sd15_lcm4_taesd: "+TAESD",
   sd15_lcm4_taesd_int8: "+INT8", sd15_lcm4_taesd_int4: "+INT4", sd15_lcm4_taesd_int8_t6: "+6L text-enc", turbo1_taesd: "SD-Turbo 1",
-  turbo1_taesd_int8: "Turbo INT8", turbo1_taesd_int4: "Turbo INT4", pocketdiff: "PocketDiffusion", pocketdiff_fast: "Pocket fast",
+  turbo1_taesd_int8: "Turbo INT8", turbo1_taesd_int4: "Turbo INT4", bktiny_dpm12_taesd: "BK-SDM-Tiny 12",
+  bktiny_dpm12_taesd_int8: "BK-Tiny INT8", pocketdiff_repair: "Pocket+repair", pocketdiff_norepair: "Pocket (v1.6)", pocketdiff: "PocketDiffusion", pocketdiff_fast: "Pocket fast",
   pocketdiff_semantic: "Pocket+semantic" };
 const lab = (k) => LABELS[k] || k;
 function hbar(el, items, { log = false, unit = "ms", fmt = (v) => fmtMs(v) } = {}) {
@@ -819,6 +863,11 @@ async function loadLab() {
     const effKeys = Object.keys(e).filter((k) => !k.startsWith("_") && !k.startsWith("cpu") && e[k].latency_ms_mean);
     hbar($("#chLatency"), effKeys.map((k) => ({ label: lab(k), value: e[k].latency_ms_mean })), { log: true });
     hbar($("#chMemory"), effKeys.map((k) => ({ label: lab(k), value: e[k].size_total_mb, value2: Math.max(0, e[k].peak_mem_mb - e[k].size_total_mb), text: `${fmtMb(e[k].peak_mem_mb)} peak` })), { fmt: fmtMb });
+    const en = bm.energy || {};
+    const enKeys = Object.keys(en).filter((k) => en[k].j_per_image).sort((a, b) => en[b].j_per_image - en[a].j_per_image);
+    hbar($("#chEnergy"), enKeys.map((k) => ({ label: lab(k), value: en[k].j_per_image,
+      text: `${num(en[k].j_per_image, en[k].j_per_image < 10 ? 1 : 0)} J · ${num(en[k].j_above_idle_per_image, en[k].j_above_idle_per_image < 10 ? 1 : 0)} above idle` })),
+      { log: true, fmt: (v) => `${num(v, 1)} J` });
     const sys = Object.entries(comp).filter(([k, v]) => !k.startsWith("_") && v.object_f1 != null).map(([k, v]) => ({ name: lab(k), v }));
     grouped($("#chComp"), sys, [{ key: "object_f1", label: "object F1" }, { key: "count_acc", label: "count" }, { key: "color_acc", label: "colour" },
       { key: "spatial_acc", label: "spatial" }, { key: "all_constraints_rate", label: "all ok" }]);

@@ -154,7 +154,8 @@ def main() -> int:
     # -------- cost calibration for the planner
     if torch.cuda.is_available():
         tables = {}
-        for fam, preset in (("sd15", "sd15_lcm4_taesd"), ("sd_turbo", "turbo1_taesd")):
+        for fam, preset in (("sd15", "sd15_lcm4_taesd"), ("sd_turbo", "turbo1_taesd"),
+                            ("bk_tiny", "bktiny_dpm12_taesd")):
             if family_available(PRESETS[preset].family):
                 tables[fam] = unet_table(engine, PRESETS[preset])
                 print(f"UNet ms table {fam}: {tables[fam]}", flush=True)
@@ -168,6 +169,12 @@ def main() -> int:
         unet_ms["sd15"] = results["sd15_lcm4_taesd"]["unet_step_ms"]
     if "turbo1_taesd" in results:
         unet_ms["sd_turbo"] = results["turbo1_taesd"]["unet_step_ms"]
+    if "bktiny_dpm12_taesd" in results:
+        unet_ms["bk_tiny"] = results["bktiny_dpm12_taesd"]["unet_step_ms"]
+        if "sd15_lcm4_taesd" in results:          # FLOPs per call relative to SD1.5 (batch 2 vs 1)
+            ratio = (results["bktiny_dpm12_taesd"]["unet_gflops_per_call"] / 2) / \
+                results["sd15_lcm4_taesd"]["unet_gflops_per_call"]
+            update_json(CALIBRATION_FILE, "unet_gflops_family", {"bk_tiny": ratio})
     if unet_ms:
         update_json(CALIBRATION_FILE, "unet_ms_512", unet_ms)
     if "sd15_lcm4_taesd_int8" in results and "sd15_lcm4_taesd" in results:

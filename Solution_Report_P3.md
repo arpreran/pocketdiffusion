@@ -267,6 +267,49 @@ An uploaded or stored image is encoded with the VAE, noised to timestep strength
 Removing components one at a time shows that each of them contributes. The planner gives the largest quality gain (+0.57 CLIP compared with one fixed configuration), best-of-N re-ranking adds +0.35 CLIP at a cost of 136 ms, and prompt-complexity adaptation adds +0.33. Classical post-processing does not change CLIP, as intended, but reduces the artifact rate from 0.21 to 0.07, with white balance responsible for most of the reduction. Re-ranking slightly raises NIQE (3.85 against 3.75) because CLIP prefers detailed, high-contrast candidates. IBP upscaling from 384 px reaches a NIQE of 3.83, close to native 512 px generation (3.78) and far better than bicubic interpolation (5.00). On complex prompts the object F1 saturates near 0.96, while the stricter all-constraints rate keeps rising with semantic re-ranking, from 59 % to 77 %.
 <!-- /AI-DRAFTED -->
 
+#### E. Missing-object repair (58 compositional prompts × 2 seeds, same code with repair off / on)
+
+| System | Object F1 ↑ | Recall ↑ | All constraints ↑ | Colour acc | Spatial acc | CLIP-L | ms / image (mean · median) |
+|---|---|---|---|---|---|---|---|
+| PocketDiffusion (auto), repair off | 0.955 | 0.932 | 0.578 | 0.643 | 0.545 | 27.54 | 365 · 218 |
+| PocketDiffusion (auto), repair on | **0.960** | **0.942** | **0.595** | **0.661** | 0.545 | 27.59 | 387 · 223 |
+
+<!-- AI-DRAFTED -->
+After best-of-N re-ranking, the selection detector (OWL-ViT v1, never the OWLv2 model that scores this table) checks whether every requested object is present. If one is missing, the same seed is generated again while a cross-attention processor multiplies the attention that every image position gives to that object's word, escalating ×2 → ×4 → ×8. The new image is kept only if the selector finds more objects, no extra distractor classes appear and the CLIP B/32 score drops by at most 2.5. The repair runs only when an object is missing, so it costs 22 ms per image on average and 5 ms at the median. The gain is small but goes the same way on every object metric: recall +1.0 point, colour binding +1.8 points, all-constraints rate +1.7 points; counting and spatial accuracy are unchanged. When two objects merge into one (an apple-shaped bottle), boosting attention cannot separate them.
+<!-- /AI-DRAFTED -->
+
+#### F. Energy per image (GPU only, NVML energy counter, 512×512, batch 1)
+
+| Configuration | J / image ↓ | above idle | Energy saving | Avg. GPU power |
+|---|---|---|---|---|
+| Baseline SD1.5 FP32, PNDM-50, CFG | 1073 | 888 | 1× | 62 W |
+| SD1.5 FP16 | 410 | 341 | 2.6× | 65 W |
+| + DPM-Solver++ 20 steps | 193 | 169 | 5.6× | 82 W |
+| + LCM-LoRA 4 steps | 35.9 | 31.5 | 30× | 88 W |
+| + TAESD decoder | 25.5 | 22.7 | 42× | 96 W |
+| + INT8 weights | 32.8 | 27.2 | 33× | 87 W |
+| + INT4 weights | 45.8 | 39.9 | 23× | 81 W |
+| SD-Turbo 1 step + TAESD | **7.05** | **6.21** | **152×** | 92 W |
+| SD-Turbo + INT8 | 9.07 | 7.84 | 118× | 87 W |
+| BK-SDM-Tiny, DPM++ 12 steps + TAESD | 64.4 | 58.0 | 17× | 90 W |
+
+<!-- AI-DRAFTED -->
+NVML's total-energy counter updates too coarsely to time a single 85 ms image, so every configuration generated images back to back for at least 8 seconds (and at least 3 images), and the energy difference was divided by the number of images. Idle power with the same models loaded (9–15 W) was measured in a separate window and is shown as the "above idle" column. Energy follows the number of UNet evaluations: SD-Turbo needs 7 J per image against 1073 J for the baseline, 152× less, which on a phone battery means far more images per charge. Weight-only quantisation is a memory tool, not an energy tool: our INT8/INT4 kernels de-quantise weights on the fly, so images take longer and use 29–80 % more energy than FP16. Only the GPU is measured, not the CPU, RAM or display.
+<!-- /AI-DRAFTED -->
+
+#### G. A smaller architecture: BK-SDM-Tiny
+
+| Configuration | UNet params | CLIP-L ↑ (test) | FID ↓ | Latency | Peak MB ↓ | Weights MB ↓ | GFLOPs / image |
+|---|---|---|---|---|---|---|---|
+| SD1.5 + LCM 4 + TAESD | 860 M | 25.27 | 158.2 | 257 ms | 2068 | 1879 | 3368 |
+| SD1.5 + LCM 4 + TAESD + INT4 | 860 M | – | – | 561 ms | 941 | 678 | 3368 |
+| BK-SDM-Tiny, DPM++ 12 + TAESD | **323 M** | 24.92 | 154.9 | 750 ms | 1041 | 856 | 11820 |
+| BK-SDM-Tiny + INT8 | 323 M | 24.94 | 154.9 | 888 ms | **732** | **550** | 11820 |
+
+<!-- AI-DRAFTED -->
+BK-SDM-Tiny removes residual and attention blocks from the SD1.5 UNet and distils the remainder (0.32 B instead of 0.86 B parameters). LCM-LoRA cannot be fused into it, because the removed blocks change the layer shapes the adapter expects, so it runs DPM-Solver++ with classifier-free guidance. Its quality is close to SD1.5 + LCM (CLIP-L 24.92 against 25.27, FID 154.9 against 158.2), and with INT8 weights it has the lowest peak memory of every configuration we measured: 732 MB. Twelve guided steps cost 3.5× the FLOPs of four LCM steps, however, so it is a memory tier, not a speed tier. The planner reflects this: on the simulated low-end phone it keeps SD1.5 + LCM INT4 under the default budgets, and switches to BK-SDM-Tiny only when the memory budget is 900 MB or less and the latency budget allows the extra compute (for example 900 MB and 60 s: predicted CLIP 25.15 against 24.59).
+<!-- /AI-DRAFTED -->
+
 ---
 
 ## 4. Failure Modes & Limitations

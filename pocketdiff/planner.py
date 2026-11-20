@@ -30,6 +30,7 @@ CPU_SCALE = float(os.environ.get("POCKETDIFF_CPU_SCALE", "1.0"))
 PARAMS_M = {  # millions of parameters (used for memory prediction)
     "sd15": {"unet": 859.5, "te": 123.1, "te_t6": 80.6},
     "sd_turbo": {"unet": 865.9, "te": 340.4},
+    "bk_tiny": {"unet": 323.4, "te": 123.1},
     "vae": 83.7, "taesd": 2.4, "clip_rerank": 151.3,
 }
 BYTES = {"fp32": 4.0, "fp16": 2.0, "int8": 1.02, "int4": 0.56}
@@ -40,6 +41,7 @@ PRIOR = {
         "sd_turbo|euler": {1: 33.0, 2: 33.2, 4: 33.1},
         "sd15|lcm": {2: 30.0, 4: 31.0, 8: 31.2},
         "sd15|dpm": {20: 31.5},
+        "bk_tiny|dpm": {12: 23.5, 20: 23.8},     # conservative until eval_degradation calibrates it
     },
     "res_delta": {256: -2.5, 384: -0.8, 512: 0.0},
     "quant_delta": {"none": 0.0, "int8": -0.05, "int4": -0.7},
@@ -55,7 +57,8 @@ PRIOR = {
         "sd_turbo": {256: {1: 35.0, 2: 38.0, 4: 55.0}, 384: {1: 42.0, 2: 63.0, 4: 107.0},
                      512: {1: 60.0, 2: 100.0, 4: 181.0}},
     },
-    "unet_ms_512": {"sd15": 60.0, "sd_turbo": 60.0},
+    "unet_ms_512": {"sd15": 60.0, "sd_turbo": 60.0, "bk_tiny": 25.0},
+    "unet_gflops_family": {"bk_tiny": 0.55},   # UNet FLOPs relative to SD1.5 (measured: bench_efficiency)
     "quant_slowdown": {"none": 1.0, "int8": 1.25, "int4": 1.6},
     "decode_ms_512": {"full": 145.0, "taesd": 15.0},
     "text_ms": 8.0, "rerank_ms_per_image": 10.0, "post_ms_512": 140.0,
@@ -227,7 +230,8 @@ class Planner:
             return None
         px = (res / 512.0) ** 2
         evals = (steps + (1 if sched == "pndm" else 0)) * (2 if cfg_scale > 1 else 1) * n
-        gflops = (self.p["te_gflops"] + evals * self.p["unet_gflops_512"] * px
+        unet_gf = self.p["unet_gflops_512"] * self.p.get("unet_gflops_family", {}).get(family, 1.0)
+        gflops = (self.p["te_gflops"] + evals * unet_gf * px
                   + n * self.p["decoder_gflops_512"][vae] * px)
         return gflops / (prof.eff_tflops * 1000.0) * 1000.0  # GFLOP / (TFLOP/s) -> ms
 
@@ -239,6 +243,8 @@ class Planner:
         if family_available("sd15"):
             fams += [("sd15", "lcm", s, 1.0, True) for s in (2, 4, 8)]
             fams += [("sd15", "dpm", 20, 7.5, False)]
+        if family_available("bk_tiny"):
+            fams += [("bk_tiny", "dpm", s, 7.5, False) for s in (12, 20)]
         te_opts = ["full"] + (["t6"] if DISTILLED_TE_DIR.exists() else [])
         for fam, sched, steps, g, lcm in fams:
             for res in (256, 384, 512):
@@ -317,8 +323,9 @@ class Planner:
             cfg = cfg.with_(width=w, height=h)
         upscale = (tw, th) if (tw, th) != (cfg.width, cfg.height) else None
 
-        fam_label = "SD-Turbo (1-step distilled)" if best["family"] == "sd_turbo" else (
-            "SD1.5 + LCM-LoRA" if best["lcm"] else "SD1.5 DPM-Solver++")
+        fam_label = {"sd_turbo": "SD-Turbo (1-step distilled)",
+                     "bk_tiny": "BK-SDM-Tiny (0.32B-parameter UNet, DPM-Solver++)"}.get(
+            best["family"], "SD1.5 + LCM-LoRA" if best["lcm"] else "SD1.5 DPM-Solver++")
         reasons += [
             f"Prompt complexity {c:.2f} ({analysis.complexity_label}); mode '{mode}' -> "
             f"latency weight {lam:.2f}.",

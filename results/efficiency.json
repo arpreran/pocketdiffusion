@@ -3,7 +3,7 @@
   "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU",
   "torch": "2.14.1+cu126",
   "cpu": "Intel64 Family 6 Model 186 Stepping 2, GenuineIntel",
-  "date": "2026-11-06 20:08"
+  "date": "2026-11-20 18:18"
  },
  "baseline": {
   "description": "Stable Diffusion v1.5, FP32, PNDM 50 steps, CFG 7.5, full VAE (reference)",
@@ -210,13 +210,13 @@
    "cfg": false,
    "unet_evals_per_image": 4
   },
-  "latency_ms_mean": 257.150479988195,
-  "latency_ms_std": 1.3584296799611384,
-  "latency_ms_median": 257.2803000221029,
-  "text_ms": 5.293319997144863,
-  "denoise_ms": 237.78841999010183,
-  "decode_ms": 14.06874000094831,
-  "unet_step_ms": 59.22580001060851,
+  "latency_ms_mean": 282.3139800224453,
+  "latency_ms_std": 1.8479380029599353,
+  "latency_ms_median": 282.3637000983581,
+  "text_ms": 5.953740025870502,
+  "denoise_ms": 261.02200001478195,
+  "decode_ms": 15.338239981792867,
+  "unet_step_ms": 65.6598000205122,
   "peak_mem_mb": 2067.80859375,
   "params_unet_m": 859.520964,
   "params_text_encoder_m": 123.06048,
@@ -224,7 +224,7 @@
   "size_unet_mb": 1639.406135559082,
   "size_text_encoder_mb": 234.7198257446289,
   "size_decoder_mb": 4.66358757019043,
-  "load_s": 1.6720853000006173,
+  "load_s": 2.8708141999086365,
   "text_encoder_gflops": 13.29850368,
   "unet_gflops_per_call": 803.27344128,
   "unet_gflops_total": 3213.09376512,
@@ -233,7 +233,7 @@
   "params_total_m": 985.026507,
   "size_total_mb": 1878.7895488739014,
   "unet_evals": 4,
-  "effective_tflops": 13.096387807273791
+  "effective_tflops": 11.929067099278074
  },
  "sd15_lcm4_taesd_int8": {
   "description": "+ INT8 weight-only quantization of UNet",
@@ -348,21 +348,21 @@
    "cfg": false,
    "unet_evals_per_image": 1
   },
-  "latency_ms_mean": 85.06965999840759,
-  "latency_ms_std": 7.868649984864099,
-  "latency_ms_median": 79.94419996975921,
-  "text_ms": 13.598039996577427,
-  "denoise_ms": 56.207639997592196,
-  "decode_ms": 15.263980004237965,
-  "unet_step_ms": 54.74519997369498,
-  "peak_mem_mb": 2488.88720703125,
+  "latency_ms_mean": 83.31575999036431,
+  "latency_ms_std": 4.702304618255805,
+  "latency_ms_median": 84.1984999133274,
+  "text_ms": 13.969519967213273,
+  "denoise_ms": 54.53556003049016,
+  "decode_ms": 14.81067999266088,
+  "unet_step_ms": 54.441100102849305,
+  "peak_mem_mb": 2487.63720703125,
   "params_unet_m": 865.910724,
   "params_text_encoder_m": 340.38784,
   "params_decoder_m": 2.445063,
   "size_unet_mb": 1651.593635559082,
   "size_text_encoder_mb": 649.2388687133789,
   "size_decoder_mb": 4.66358757019043,
-  "load_s": 2.561454699985916,
+  "load_s": 2.4731486999662593,
   "text_encoder_gflops": 45.127233536,
   "unet_gflops_per_call": 804.25746432,
   "unet_gflops_total": 804.25746432,
@@ -371,7 +371,7 @@
   "params_total_m": 1208.7436269999998,
   "size_total_mb": 2305.4960918426514,
   "unet_evals": 1,
-  "effective_tflops": 11.646159627610427
+  "effective_tflops": 11.891325721839195
  },
  "turbo1_taesd_int8": {
   "description": "SD-Turbo 1 step + TAESD + INT8 weights",
@@ -564,43 +564,155 @@
  "_unet_ms_table": {
   "sd15": {
    "256": {
-    "1": 34.5816999906674,
-    "2": 36.366899992572144,
-    "4": 52.154700009850785,
-    "8": 85.15200001420453
+    "1": 31.45430004224181,
+    "2": 36.97329992428422,
+    "4": 58.70739999227226,
+    "8": 97.75789990089834
    },
    "384": {
-    "1": 41.57530001248233,
-    "2": 61.73600000329316,
-    "4": 100.57039998355322,
-    "8": 181.95729999570176
+    "1": 44.26570003852248,
+    "2": 69.96299989987165,
+    "4": 117.57130001205951,
+    "8": 215.9460000693798
    },
    "512": {
-    "1": 58.85209998814389,
-    "2": 97.34450001269579,
-    "4": 176.81469998206012,
-    "8": 342.90790001978166
+    "1": 67.77950003743172,
+    "2": 116.79600004572421,
+    "4": 209.30260000750422,
+    "8": 414.20489992015064
    }
   },
   "sd_turbo": {
    "256": {
-    "1": 48.814999987371266,
-    "2": 38.67999999783933,
-    "4": 51.17620000964962,
-    "8": 82.02829997753724
+    "1": 38.67169993463904,
+    "2": 38.00860000774264,
+    "4": 57.81659996137023,
+    "8": 97.08799992222339
    },
    "384": {
-    "1": 39.84339997987263,
-    "2": 58.27449998469092,
-    "4": 93.85180001845583,
-    "8": 169.23830000450835
+    "1": 44.86379993613809,
+    "2": 69.97029995545745,
+    "4": 114.11960003897548,
+    "8": 207.40870002191514
    },
    "512": {
-    "1": 54.02270000195131,
-    "2": 88.79370000795461,
-    "4": 159.37740000663325,
-    "8": 309.3407999840565
+    "1": 64.21060010325164,
+    "2": 108.18019998259842,
+    "4": 204.8762000631541,
+    "8": 383.62390000838786
+   }
+  },
+  "bk_tiny": {
+   "256": {
+    "1": 15.22649999242276,
+    "2": 17.70680001936853,
+    "4": 29.77150003425777,
+    "8": 58.837000047788024
+   },
+   "384": {
+    "1": 22.944399970583618,
+    "2": 38.35859999526292,
+    "4": 68.29379999544472,
+    "8": 129.55910002347082
+   },
+   "512": {
+    "1": 37.49299992341548,
+    "2": 67.10190000012517,
+    "4": 127.38469999749213,
+    "8": 253.4124000230804
    }
   }
+ },
+ "bktiny_dpm12_taesd": {
+  "description": "Smaller UNet: BK-SDM-Tiny (0.32B), DPM++ 12 steps, TAESD",
+  "config": {
+   "name": "bktiny_dpm12_taesd",
+   "family": "bk_tiny",
+   "dtype": "fp16",
+   "scheduler": "dpm",
+   "steps": 12,
+   "guidance": 7.5,
+   "lcm_lora": false,
+   "vae": "taesd",
+   "quant": "none",
+   "text_encoder": "full",
+   "prune": 0.0,
+   "height": 512,
+   "width": 512,
+   "device": "cuda",
+   "description": "Smaller UNet: BK-SDM-Tiny (0.32B), DPM++ 12 steps, TAESD",
+   "cfg": true,
+   "unet_evals_per_image": 24
+  },
+  "latency_ms_mean": 750.0111401546746,
+  "latency_ms_std": 6.1061575281950695,
+  "latency_ms_median": 751.2862000148743,
+  "text_ms": 10.505960020236671,
+  "denoise_ms": 724.5312600862235,
+  "decode_ms": 14.973920048214495,
+  "unet_step_ms": 60.4253500350751,
+  "peak_mem_mb": 1041.16064453125,
+  "params_unet_m": 323.384964,
+  "params_text_encoder_m": 123.06048,
+  "params_decoder_m": 2.445063,
+  "size_unet_mb": 616.8078689575195,
+  "size_text_encoder_mb": 234.7198257446289,
+  "size_decoder_mb": 4.66358757019043,
+  "load_s": 6.275562700000592,
+  "text_encoder_gflops": 13.29850368,
+  "unet_gflops_per_call": 971.01807616,
+  "unet_gflops_total": 11652.21691392,
+  "decoder_gflops": 141.350141952,
+  "total_gflops": 11820.164063232,
+  "params_total_m": 448.890507,
+  "size_total_mb": 856.1912822723389,
+  "unet_evals": 24,
+  "effective_tflops": 15.759984659420297
+ },
+ "bktiny_dpm12_taesd_int8": {
+  "description": "BK-SDM-Tiny + INT8 weights (lowest memory)",
+  "config": {
+   "name": "bktiny_dpm12_taesd_int8",
+   "family": "bk_tiny",
+   "dtype": "fp16",
+   "scheduler": "dpm",
+   "steps": 12,
+   "guidance": 7.5,
+   "lcm_lora": false,
+   "vae": "taesd",
+   "quant": "int8",
+   "text_encoder": "full",
+   "prune": 0.0,
+   "height": 512,
+   "width": 512,
+   "device": "cuda",
+   "description": "BK-SDM-Tiny + INT8 weights (lowest memory)",
+   "cfg": true,
+   "unet_evals_per_image": 24
+  },
+  "latency_ms_mean": 888.3840800728649,
+  "latency_ms_std": 6.429423429530276,
+  "latency_ms_median": 885.0676002912223,
+  "text_ms": 12.522619985975325,
+  "denoise_ms": 861.0688600689173,
+  "decode_ms": 14.79260001797229,
+  "unet_step_ms": 71.81460002902895,
+  "peak_mem_mb": 732.19140625,
+  "params_unet_m": 323.384964,
+  "params_text_encoder_m": 123.06048,
+  "params_decoder_m": 2.445063,
+  "size_unet_mb": 310.87708282470703,
+  "size_text_encoder_mb": 234.7198257446289,
+  "size_decoder_mb": 4.66358757019043,
+  "load_s": 0.7302033000160009,
+  "text_encoder_gflops": 13.29850368,
+  "unet_gflops_per_call": 971.01807616,
+  "unet_gflops_total": 11652.21691392,
+  "decoder_gflops": 141.350141952,
+  "total_gflops": 11820.164063232,
+  "params_total_m": 448.890507,
+  "size_total_mb": 550.2604961395264,
+  "unet_evals": 24,
+  "effective_tflops": 13.305240749319275
  }
 }

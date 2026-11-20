@@ -67,9 +67,12 @@ def main() -> int:
     runner = Runner()
     systems = [s for s in args.systems if s.startswith("pocketdiff") or family_available(PRESETS[s].family)]
     for s in systems:
-        if s == "pocketdiff":
+        if s in ("pocketdiff", "pocketdiff_norepair"):   # norepair: same code as _repair, repair off
             runner.run_set(s, rows, "compositional", pipeline_kwargs=dict(
-                budget=Budget(latency_ms=1500, mode="auto"), verify=False, safety=False))
+                budget=Budget(latency_ms=1500, mode="auto"), verify=False, safety=False, repair=False))
+        elif s == "pocketdiff_repair":     # + missing-object repair (selector detector, attention boost)
+            runner.run_set(s, rows, "compositional", pipeline_kwargs=dict(
+                budget=Budget(latency_ms=1500, mode="auto"), verify=False, safety=False, repair=True))
         elif s == "pocketdiff_semantic":
             runner.run_set(s, rows, "compositional", pipeline_kwargs=dict(
                 budget=Budget(latency_ms=3000, mode="quality"), verify=False, safety=False,

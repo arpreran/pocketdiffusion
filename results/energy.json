@@ -1,0 +1,153 @@
+{
+ "_env": {
+  "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU",
+  "torch": "2.14.1+cu126",
+  "date": "2026-11-20 18:19",
+  "prompt": "a red apple to the left of a green bottle on a wooden table, studio photo",
+  "size": "512x512, batch 1",
+  "method": "NVML total-energy counter over >= 8 s of back-to-back images"
+ },
+ "baseline": {
+  "images": 3,
+  "seconds": 51.57308350005187,
+  "avg_power_w": 62.44212642427605,
+  "idle_power_w": 10.806106131107587,
+  "latency_ms": 17191.027833350625,
+  "j_per_image": 1073.4443333333281,
+  "j_above_idle_per_image": 887.6762620633168,
+  "images_per_wh": 3.353690441330152,
+  "energy_saving_x": 1.0
+ },
+ "sd15_fp16": {
+  "images": 3,
+  "seconds": 19.05920949999709,
+  "avg_power_w": 64.56663378405636,
+  "idle_power_w": 10.835000407901203,
+  "latency_ms": 6353.069833332363,
+  "j_per_image": 410.19633333330665,
+  "j_above_idle_per_image": 341.36081909772565,
+  "images_per_wh": 8.776285177261215,
+  "energy_saving_x": 2.61690377534676
+ },
+ "sd15_fp16_dpm20": {
+  "images": 4,
+  "seconds": 9.361872400064021,
+  "avg_power_w": 82.43190753110296,
+  "idle_power_w": 10.400295836238076,
+  "latency_ms": 2340.4681000160053,
+  "j_per_image": 192.9292500000156,
+  "j_above_idle_per_image": 168.5876893645711,
+  "images_per_wh": 18.659690015898104,
+  "energy_saving_x": 5.563927363700638
+ },
+ "sd15_lcm4": {
+  "images": 20,
+  "seconds": 8.194317099894397,
+  "avg_power_w": 87.67405401107341,
+  "idle_power_w": 10.7463568702282,
+  "latency_ms": 409.71585499471985,
+  "j_per_image": 35.921450000000185,
+  "j_above_idle_per_image": 31.51849720683626,
+  "images_per_wh": 100.21867157366925,
+  "energy_saving_x": 29.883101415263656
+ },
+ "sd15_lcm4_taesd": {
+  "images": 31,
+  "seconds": 8.206177099980414,
+  "avg_power_w": 96.34608056433505,
+  "idle_power_w": 10.54631382803995,
+  "latency_ms": 264.71539032194886,
+  "j_per_image": 25.50429032257788,
+  "j_above_idle_per_image": 22.712518741130516,
+  "images_per_wh": 141.15272193294751,
+  "energy_saving_x": 42.08877485930486
+ },
+ "sd15_lcm4_taesd_int8": {
+  "images": 22,
+  "seconds": 8.26026460006833,
+  "avg_power_w": 87.44937783155348,
+  "idle_power_w": 15.013995060600458,
+  "latency_ms": 375.46657273037863,
+  "j_per_image": 32.83431818181734,
+  "j_above_idle_per_image": 27.19706491342285,
+  "images_per_wh": 109.6413813152841,
+  "energy_saving_x": 32.69275540881399
+ },
+ "sd15_lcm4_taesd_int8_t6": {
+  "images": 22,
+  "seconds": 8.127932900004089,
+  "avg_power_w": 89.3593745095445,
+  "idle_power_w": 13.511419034903804,
+  "latency_ms": 369.4514954547313,
+  "j_per_image": 33.01395454545061,
+  "j_above_idle_per_image": 28.022140577289875,
+  "images_per_wh": 109.04479786097262,
+  "energy_saving_x": 32.51486676203869
+ },
+ "turbo1_taesd": {
+  "images": 105,
+  "seconds": 8.065419600019231,
+  "avg_power_w": 91.78852889416942,
+  "idle_power_w": 11.006117401829373,
+  "latency_ms": 76.81352000018316,
+  "j_per_image": 7.050599999999672,
+  "j_above_idle_per_image": 6.205181380829887,
+  "images_per_wh": 510.5948429921096,
+  "energy_saving_x": 152.24865023308345
+ },
+ "turbo1_taesd_int8": {
+  "images": 78,
+  "seconds": 8.094261899963021,
+  "avg_power_w": 87.40488122866829,
+  "idle_power_w": 11.819846937150203,
+  "latency_ms": 103.77258846106437,
+  "j_per_image": 9.070230769230806,
+  "j_above_idle_per_image": 7.843654657349146,
+  "images_per_wh": 396.9028012178455,
+  "energy_saving_x": 118.3480730142835
+ },
+ "sd15_lcm4_taesd_int4": {
+  "images": 15,
+  "seconds": 8.438000200106762,
+  "avg_power_w": 81.42391368884321,
+  "idle_power_w": 10.42117527722857,
+  "latency_ms": 562.5333466737842,
+  "j_per_image": 45.80366666666232,
+  "j_above_idle_per_image": 39.94140806168883,
+  "images_per_wh": 78.5963278049139,
+  "energy_saving_x": 23.435772973053755
+ },
+ "turbo1_taesd_int4": {
+  "images": 53,
+  "seconds": 8.145660099945962,
+  "avg_power_w": 79.1213961903716,
+  "idle_power_w": 9.74472589727244,
+  "latency_ms": 153.69169999898043,
+  "j_per_image": 12.160301886791064,
+  "j_above_idle_per_image": 10.662618397615173,
+  "images_per_wh": 296.0452818947236,
+  "energy_saving_x": 88.27448062776632
+ },
+ "bktiny_dpm12_taesd": {
+  "images": 12,
+  "seconds": 8.586820599995553,
+  "avg_power_w": 89.96146955724305,
+  "idle_power_w": 8.983123715860721,
+  "latency_ms": 715.5683833329628,
+  "j_per_image": 64.37358333333395,
+  "j_above_idle_per_image": 57.9455440186955,
+  "images_per_wh": 55.92356077738874,
+  "energy_saving_x": 16.67523039341942
+ },
+ "bktiny_dpm12_taesd_int8": {
+  "images": 10,
+  "seconds": 8.23369839999359,
+  "avg_power_w": 88.8007994075365,
+  "idle_power_w": 9.430606514141308,
+  "latency_ms": 823.3698399993591,
+  "j_per_image": 73.1158999999985,
+  "j_above_idle_per_image": 65.35102302335306,
+  "images_per_wh": 49.23689648899998,
+  "energy_saving_x": 14.681407646399075
+ }
+}

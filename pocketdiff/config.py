@@ -22,6 +22,7 @@ DISTILLED_TE_DIR = ARTIFACTS_DIR / "text_encoder_t6_sd15"
 MODEL_IDS = {
     "sd15": "stable-diffusion-v1-5/stable-diffusion-v1-5",   # baseline + LCM student base
     "sd_turbo": "stabilityai/sd-turbo",                       # adversarially distilled, 1-step
+    "bk_tiny": "nota-ai/bk-sdm-tiny",                         # block-removed distilled SD1.5 UNet (0.32B)
     "lcm_lora": "latent-consistency/lcm-lora-sdv1-5",         # consistency-distillation adapter
     "taesd": "madebyollin/taesd",                             # tiny latent decoder (2.4M params)
     "clip_rerank": "openai/clip-vit-base-patch32",            # on-device scorer for best-of-N
@@ -117,6 +118,14 @@ PRESETS: dict[str, GenConfig] = {
         name="turbo1_taesd_int8", family="sd_turbo", dtype="fp16", scheduler="euler", steps=1,
         guidance=0.0, vae="taesd", quant="int8",
         description="SD-Turbo 1 step + TAESD + INT8 weights"),
+    # smaller architecture: BK-SDM-Tiny (block-removed + distilled SD1.5 UNet, 0.32B instead of
+    # 0.86B parameters). LCM-LoRA does not fit its reduced blocks, so it runs DPM-Solver++ with CFG.
+    "bktiny_dpm12_taesd": GenConfig(
+        name="bktiny_dpm12_taesd", family="bk_tiny", dtype="fp16", scheduler="dpm", steps=12, guidance=7.5,
+        vae="taesd", description="Smaller UNet: BK-SDM-Tiny (0.32B), DPM++ 12 steps, TAESD"),
+    "bktiny_dpm12_taesd_int8": GenConfig(
+        name="bktiny_dpm12_taesd_int8", family="bk_tiny", dtype="fp16", scheduler="dpm", steps=12, guidance=7.5,
+        vae="taesd", quant="int8", description="BK-SDM-Tiny + INT8 weights (lowest memory)"),
     "cpu_fallback": GenConfig(
         name="cpu_fallback", family="sd15", dtype="fp32", scheduler="lcm", steps=2, guidance=1.0,
         lcm_lora=True, vae="taesd", height=256, width=256, device="cpu",

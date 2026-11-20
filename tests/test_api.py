@@ -61,7 +61,7 @@ def test_generate_rejects_empty_prompt(client):
 
 def test_history_and_stats_on_empty_db(client):
     r = client.get("/api/generations").json()
-    assert r == {"items": [], "total": 0}
+    assert r["items"] == [] and r["total"] == 0 and r["everyone"] is False
     assert client.get("/api/generations/does-not-exist").status_code == 404
     assert client.post("/api/generations/nope/favorite").status_code == 404
     assert client.delete("/api/generations/..%2F..").status_code in (400, 404)
@@ -69,15 +69,20 @@ def test_history_and_stats_on_empty_db(client):
     assert s["n"] == 0
 
 
-def test_db_roundtrip(client):
+def test_db_roundtrip(client, monkeypatch):
     import backend.main as main
+    monkeypatch.setenv("POCKETDIFF_ADMIN_KEY", "team-secret")
+    admin = {"X-Admin-Key": "team-secret"}
     row = {"id": "t1", "created_at": 1.0, "kind": "generate", "prompt": "a dog", "family": "sd_turbo",
            "latency_ms": 100.0, "clip": 30.0, "plan_json": '{"reasons": ["x"]}'}
     main.db.insert_generation(row, [{"generation_id": "t1", "idx": 0, "seed": 1, "clip": 30.0, "iqa": 80.0,
                                      "score": 31.0, "chosen": 1, "image_path": None}], [], [])
     g = client.get("/api/generations/t1").json()
     assert g["plan"]["reasons"] == ["x"] and g["candidates"][0]["chosen"] == 1
-    assert client.post("/api/generations/t1/favorite").json()["favorite"] is True
-    assert client.get("/api/generations?favorites=true").json()["total"] == 1
+    assert g["mine"] is False and "owner" not in g                  # visitors never see owner ids
+    assert client.post("/api/generations/t1/favorite").status_code == 403
+    assert client.post("/api/generations/t1/favorite", headers=admin).json()["favorite"] is True
+    assert client.get("/api/generations?favorites=true", headers=admin).json()["total"] == 1
     assert client.get("/api/stats").json()["n"] == 1
-    assert client.delete("/api/generations/t1").status_code == 200
+    assert client.delete("/api/generations/t1").status_code == 403
+    assert client.delete("/api/generations/t1", headers=admin).status_code == 200

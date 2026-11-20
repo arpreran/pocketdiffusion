@@ -14,7 +14,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="PocketDiffusion">
   <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
-  <link rel="stylesheet" href="/static/styles.css?v=1.6">
+  <link rel="stylesheet" href="/static/styles.css?v=1.7">
 </head>
 <body>
   <div class="aurora" aria-hidden="true"><span></span><span></span><span></span></div>
@@ -64,7 +64,8 @@
             <textarea id="prompt" rows="4" maxlength="1500" placeholder="Describe the image — objects, colours, positions, style…"></textarea>
             <div class="chips" id="sceneChips"><span class="chip ghost">scene graph appears as you type</span></div>
             <div class="complexity"><span>complexity</span><div class="meter"><i id="complexityBar"></i></div><b id="complexityLabel">–</b></div>
-            <button class="ghost-btn" id="inspireBtn" type="button">✦ Inspire me</button>
+            <div class="prompt-tools"><button class="ghost-btn" id="inspireBtn" type="button">✦ Inspire me</button>
+              <label class="toggle live-toggle hidden" id="liveToggle" title="Shows a 1-step SD-Turbo sketch of the prompt while you type (not saved). Generate runs the full pipeline."><input type="checkbox" id="livePreview"><span></span>Live preview while typing</label></div>
           </div>
 
           <div class="field">
@@ -148,6 +149,7 @@
             </div>
             <div class="stage-live hidden" id="stageLive">
               <img id="liveImg" alt="live denoising preview">
+              <div class="live-badge hidden" id="liveBadge"></div>
               <div class="ring"><svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="52" class="rg-bg"/><circle cx="60" cy="60" r="52" class="rg-fg" id="ringArc"/></svg><div class="ring-txt"><b id="stepTxt">0/0</b><span id="stageTxt">queued</span></div></div>
             </div>
             <div class="stage-final hidden" id="stageFinal">
@@ -237,6 +239,7 @@
         <div class="card chart-card wide"><h3>Quality vs. computational cost</h3><p class="muted">CLIP-L/14 vs. generation latency (log scale) on 200 unseen COCO prompts · bubble = peak memory</p><div id="chScatter" class="chart"></div></div>
         <div class="card chart-card"><h3>Latency per configuration</h3><p class="muted">512×512, batch 1, RTX 4060 Laptop (ms, log)</p><div id="chLatency" class="chart"></div></div>
         <div class="card chart-card"><h3>Peak memory & weights</h3><p class="muted">MB — the phone-relevant number</p><div id="chMemory" class="chart"></div></div>
+        <div class="card chart-card"><h3>Energy per image</h3><p class="muted">GPU joules per 512×512 image (NVML energy counter, log scale) and the part above idle power</p><div id="chEnergy" class="chart"></div></div>
         <div class="card chart-card"><h3>Semantic consistency</h3><p class="muted">58 annotated complex prompts · OWLv2 + HSV + geometry</p><div id="chComp" class="chart"></div></div>
         <div class="card chart-card"><h3>Compression &amp; fewer steps</h3><p class="muted">validation split · CLIP-L</p><div id="chDeg" class="chart"></div></div>
         <div class="card chart-card wide"><h3>Your session</h3><p class="muted">live from the database</p><div id="chSession" class="chart"></div></div>
@@ -285,6 +288,9 @@
           <div><h4>Full stack</h4><p>FastAPI backend with a single GPU worker and Server-Sent-Events streaming, SQLite (WAL) persistence for every generation, candidate, post-processing stage and denoising frame, and this framework-free frontend.</p></div>
           <div><h4>Explainability</h4><p><b>Explain</b> re-runs an image with the UNet's 16 cross-attention layers recorded and shows, for every prompt word, which pixels it shaped (DAAM-style heat maps), plus a map that colours each pixel by its dominant word.</p></div>
           <div><h4>Image-to-image editing</h4><p>Upload a photo or pick a result, describe the change and set how much may change: the picture is encoded by the VAE, noised to that strength and redrawn by SD-Turbo in 1–4 steps (SDEdit). Low strength keeps the layout; high strength follows the prompt.</p></div>
+          <div><h4>Live preview &amp; object repair</h4><p>With <b>Live preview</b> on, every pause in typing renders a 1-step SD-Turbo sketch (~0.1–0.25 s, not saved). After generation, if the selection detector cannot find a requested object, that word's cross-attention is boosted (×2 → ×4 → ×8) and the same seed is regenerated; the new image is kept only if it finds more objects without losing prompt alignment.</p></div>
+          <div><h4>Energy &amp; a smaller model</h4><p>The Lab reports GPU energy per image from the NVML energy counter. BK-SDM-Tiny, a distilled SD1.5 UNet with 0.32B instead of 0.86B parameters, is an extra low-memory option for the planner and the model menu.</p></div>
+          <div><h4>Private by default</h4><p>Each browser gets an anonymous id: the gallery shows only your own images and only you can favourite or delete them; share links still open any image. Requests are rate-limited per browser so one visitor cannot fill the GPU queue.</p></div>
           <div><h4>On your phone</h4><p>Installable web app (manifest + service worker, works offline for the app shell and saved images), voice prompts through the Web Speech API, one-tap style presets and share links that always reach the live server.</p></div>
         </div>
       </div>
@@ -300,6 +306,6 @@
   </div>
   <div class="toasts" id="toasts" aria-live="polite"></div>
 
-  <script src="/static/app.js?v=1.6"></script>
+  <script src="/static/app.js?v=1.7"></script>
 </body>
 </html>

@@ -24,6 +24,8 @@ A custom diffusion loop executes the selected plan using deadline-aware early ex
 
 The compositional benchmark contains 58 annotated prompts covering objects, counts, colours, and spatial relationships. PocketDiffusion achieved an object F1 score of **0.958**, compared with 0.889 for the baseline. The percentage of prompts satisfying all evaluated constraints increased from 59% to **77%** when eight-candidate semantic re-ranking was used.
 
+**Energy per image** (GPU, NVML energy counter): baseline **1073 J**, SD1.5 + LCM + TAESD 25.5 J, SD-Turbo 1 step **7.05 J — 152× less**. **Lowest memory:** BK-SDM-Tiny (0.32 B-parameter UNet) + INT8 peaks at **732 MB** with CLIP-L 24.92 / FID 154.9. **Missing-object repair** raises object recall on the 58 compositional prompts from 0.932 to 0.942 and the all-constraints rate from 0.578 to 0.595 for +22 ms per image on average. See report §3.3 E–G.
+
 Full benchmark tables, ablation studies, and failure cases are documented in `eval_P3_<TeamID>.md`. The reported measurements are generated through the evaluation scripts in `eval/`.
 
 ---
@@ -83,7 +85,7 @@ docker build -t pocketdiffusion . && docker run --gpus all -p 8000:8000 -v pdata
 
 API endpoints:
 
-`GET /api/system` · `POST /api/analyze` · `POST /api/plan` · `POST /api/generate` · `GET /api/jobs/{id}/events` (SSE) · `GET/DELETE /api/generations[/{id}]` · `POST /api/generations/{id}/favorite` · `GET /api/stats` · `GET /api/benchmarks` · `POST /api/compare` · `POST /api/edit` · `POST /api/generations/{id}/attention` · `GET /share/{id}` · `GET /manifest.webmanifest` · `GET /sw.js`
+`GET /api/system` · `POST /api/analyze` · `POST /api/plan` · `POST /api/generate` · `GET /api/jobs/{id}/events` (SSE) · `GET/DELETE /api/generations[/{id}]` · `POST /api/generations/{id}/favorite` · `GET /api/stats` · `GET /api/benchmarks` · `POST /api/compare` · `POST /api/edit` · `POST /api/generations/{id}/attention` · `POST /api/preview` · `GET /share/{id}` · `GET /manifest.webmanifest` · `GET /sw.js`
 
 ---
 
@@ -140,7 +142,17 @@ The evaluation scripts generate the reported measurements rather than relying on
 | **Share links** | `GET /share/{id}`, `deploy/pages/index.html` | Each image gets a page with a link preview (Open Graph), download and "Remix this prompt". The link goes through the permanent GitHub Pages address, so it keeps working when the tunnel URL changes. |
 | **Installable phone app** | `frontend/manifest.webmanifest`, `frontend/sw.js` | "Install app" / "Add to Home Screen": standalone window, app icons, offline app shell and cached images; API calls always go to the network. |
 
-The v1.6 features were implemented with AI assistance (Claude).
+### Extra features (v1.7)
+
+| Feature | Where | What it does |
+|---|---|---|
+| **Private galleries, team view, rate limits** | `backend/main.py` | Every browser gets an anonymous id (cookie). Visitors see and change only their own images; share links still open any image. Requests made on the laptop itself (or with `POCKETDIFF_ADMIN_KEY`) see everything. At most 12 jobs per minute and 2 queued jobs per browser. |
+| **Live preview while typing** | `POST /api/preview`, `backend/jobs.py` | 1-step SD-Turbo sketch after every pause in typing (≈0.1–0.25 s on the GPU, not saved); a newer keystroke replaces an older pending preview. |
+| **Missing-object repair** | `pocketdiff/attention.py`, `pipeline.py` | If the selection detector misses a requested object, that word's cross-attention is boosted ×2 → ×4 → ×8 on the same seed; kept only if more objects are found without losing prompt alignment. |
+| **Energy per image** | `eval/bench_energy.py`, Lab tab | Joules per image for every configuration from the GPU's energy counter (`results/energy.json`). |
+| **BK-SDM-Tiny** | `config.py`, `planner.py` | Smaller distilled UNet (0.32 B params) as a low-memory tier for the planner and the model menu. |
+
+The v1.6 and v1.7 features were implemented with AI assistance (Claude).
 
 ---
 

@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS generations (
     favorite        INTEGER NOT NULL DEFAULT 0,
     image_path      TEXT,
     full_path       TEXT,
+    owner           TEXT,                                   -- anonymous visitor id (cookie)
     raw_path        TEXT,
     heatmap_path    TEXT,
     verify_path     TEXT,
@@ -96,7 +97,7 @@ CREATE TABLE IF NOT EXISTS frames (
 
 LIST_COLUMNS = ("id, created_at, kind, prompt, seed, device_profile, mode, family, scheduler, steps, "
                 "width, height, quant, n_candidates, latency_ms, peak_mem_mb, clip, iqa_after, "
-                "object_f1, all_ok, favorite, image_path")
+                "object_f1, all_ok, favorite, image_path, owner")
 
 
 class Database:
@@ -108,6 +109,9 @@ class Database:
             cols = {r["name"] for r in c.execute("PRAGMA table_info(generations)")}
             if "full_path" not in cols:   # databases created before 2K/4K/8K outputs existed
                 c.execute("ALTER TABLE generations ADD COLUMN full_path TEXT")
+            if "owner" not in cols:       # databases created before per-visitor galleries
+                c.execute("ALTER TABLE generations ADD COLUMN owner TEXT")
+            c.execute("CREATE INDEX IF NOT EXISTS idx_gen_owner ON generations(owner, created_at DESC)")
 
     @contextmanager
     def connect(self):
@@ -135,6 +139,12 @@ class Database:
             c.executemany("INSERT INTO frames (generation_id, step, image_path) "
                           "VALUES (:generation_id, :step, :image_path)", frames)
 
+    def owner_of(self, gid: str) -> tuple[bool, str | None]:
+        """(exists, owner) of one generation."""
+        with self.connect() as c:
+            r = c.execute("SELECT owner FROM generations WHERE id=?", (gid,)).fetchone()
+        return (r is not None, r["owner"] if r is not None else None)
+
     def toggle_favorite(self, gid: str) -> bool | None:
         with self.connect() as c:
             r = c.execute("SELECT favorite FROM generations WHERE id=?", (gid,)).fetchone()
@@ -151,8 +161,12 @@ class Database:
 
     # ------------------------------------------------------------------ reads
     def list(self, limit: int = 24, offset: int = 0, favorites: bool = False, family: str | None = None,
-             q: str | None = None) -> tuple[list[dict], int]:
-        where, args = ["kind = 'generate'"], []
+             q: str | None = None, owner: str | None = None, everyone: bool = False) -> tuple[list[dict], int]:
+        """Gallery page. Visitors see only their own images (`owner`); the team sees all (`everyone`)."""
+        where, args = ["kind IN ('generate', 'edit')"], []
+        if not everyone:
+            where.append("owner = ?")
+            args.append(owner or "")
         if favorites:
             where.append("favorite = 1")
         if family:

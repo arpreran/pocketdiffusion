@@ -27,6 +27,10 @@ DPM20 = PRESETS["sd15_fp16_dpm20"].with_(vae="taesd", name="dpm20_taesd")
 def sweeps() -> dict[str, list]:
     s: dict[str, list] = {"steps": [], "resolution": [], "quant": [], "prune": [], "text_encoder": [],
                           "decoder": [], "rerank": []}
+    if family_available("bk_tiny"):
+        bk = PRESETS["bktiny_dpm12_taesd"]
+        for st in (12, 20):
+            s["steps"].append((f"bktiny_steps{st}", bk.with_(steps=st, name=f"bktiny_steps{st}"), {}))
     if family_available("sd15"):
         for st in (1, 2, 4, 8):
             s["steps"].append((f"lcm_steps{st}", LCM4.with_(steps=st, name=f"lcm_steps{st}"), {}))
@@ -111,7 +115,8 @@ def main() -> int:
         if k.startswith("_") or v.get("res") != 512 or v.get("quant") != "none" or v.get("prune", 0) > 0 \
                 or v.get("te") != "full" or v.get("vae") != "taesd" or v.get("n", 1) != 1:
             continue
-        fam = "sd_turbo|euler" if v["family"] == "sd_turbo" else ("sd15|dpm" if v["steps"] == 20 else "sd15|lcm")
+        fam = {"sd_turbo": "sd_turbo|euler", "bk_tiny": "bk_tiny|dpm"}.get(
+            v["family"], "sd15|dpm" if v["steps"] == 20 else "sd15|lcm")
         clip.setdefault(fam, {})[str(v["steps"])] = v["clip_mean"]
     cal = {"clip": clip}
 

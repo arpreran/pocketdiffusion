@@ -213,3 +213,58 @@ def segmentation(image: Image.Image, words: list[WordMap]) -> Image.Image:
     a = np.where(peak > 0.35, 0.55, 0.0)[..., None]
     out = base * (1 - a) + tint * a
     return Image.fromarray((np.clip(out, 0, 1) * 255).astype(np.uint8))
+
+
+# ------------------------------------------------------------------ repair: boost a missing object's word
+def _boost_processor(positions: list[int], factor: float, cond_only: bool):
+    """Cross-attention processor that multiplies the attention every image position gives to the
+    `positions` tokens by `factor` (rows renormalised). With classifier-free guidance only the
+    conditional half of the batch is changed."""
+    from diffusers.models.attention_processor import AttnProcessor
+
+    class _Boost(AttnProcessor):
+        def __call__(self, attn, hidden_states, encoder_hidden_states=None, attention_mask=None,
+                     temb=None, *args, **kwargs):
+            orig = attn.get_attention_scores
+
+            def scores(query, key, mask=None):
+                p = orig(query, key, mask)
+                pos = [i for i in positions if i < p.shape[-1]]
+                if pos:
+                    b = max(p.shape[0] // attn.heads, 1)
+                    v = p.view(b, attn.heads, p.shape[1], p.shape[2])
+                    sel = v[b // 2:] if cond_only and b >= 2 else v
+                    sel[..., pos] *= factor
+                    sel /= sel.sum(-1, keepdim=True)
+                return p
+
+            attn.get_attention_scores = scores
+            try:
+                return super().__call__(attn, hidden_states, encoder_hidden_states, attention_mask, temb)
+            finally:
+                del attn.get_attention_scores
+
+    return _Boost()
+
+
+def boosted_generate(engine, prompt: str, cfg, seed: int, words: list[str], factor: float = 2.0,
+                     negative_prompt: str = ""):
+    """Generate with extra cross-attention on `words` (all their BPE tokens); same seed and config.
+    Returns (GenResult, positions) - positions is empty when none of the words is in the prompt."""
+    from .engine import resolve_device
+
+    cfg = resolve_device(cfg)
+    bundle = engine.models.get(cfg)
+    want = {w.lower() for w in words}
+    positions = [p for w, pos in word_positions(bundle.tokenizer, prompt) if w in want for p in pos]
+    if not positions:
+        return None, []
+    unet = bundle.unet
+    original = dict(unet.attn_processors)
+    proc = _boost_processor(positions, factor, cond_only=cfg.cfg)
+    try:
+        unet.set_attn_processor({k: (proc if ".attn2." in k else v) for k, v in original.items()})
+        res = engine.generate(prompt, cfg, seed=seed, n=1, negative_prompt=negative_prompt)
+    finally:
+        unet.set_attn_processor(original)
+    return res, positions

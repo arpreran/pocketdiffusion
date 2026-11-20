@@ -403,5 +403,12 @@ input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border-radius: 
   cursor: pointer; font: inherit; font-size: 13px; white-space: nowrap; }
 .install-btn:hover { border-color: var(--a1); }
 @media (max-width: 900px) { .install-btn { padding: 0 9px; } }
+/* live preview while typing */
+.prompt-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; }
+.prompt-tools .ghost-btn { margin-top: 10px; }
+.live-toggle { display: inline-flex; margin-top: 10px; }
+.live-badge { position: absolute; left: 12px; bottom: 12px; z-index: 2; font: 12px var(--mono); color: #fff; padding: 5px 10px;
+  border-radius: 999px; background: rgba(8, 8, 18, .66); backdrop-filter: blur(8px); max-width: calc(100% - 24px); }
+.stage-live.previewing .ring { display: none; }
 /* live preview before the first denoising step: no broken-image alt text */
 #liveImg:not([src]) { visibility: hidden; }

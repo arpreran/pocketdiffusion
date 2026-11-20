@@ -23,10 +23,13 @@ GET  /media/...                  stored images;  GET /  -> single-page frontend
 from __future__ import annotations
 
 import asyncio
+import collections
+import hmac
 import html
 import json
 import os
 import re
+import secrets
 import shutil
 import threading
 import time
@@ -70,6 +73,94 @@ app.add_middleware(GZipMiddleware, minimum_size=1024)
 # read-only cross-origin GETs, so the permanent status page (GitHub Pages) can check that this
 # server is up before forwarding visitors to it; writes (POST/DELETE) stay same-origin only
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["GET"], allow_headers=[])
+
+# ------------------------------------------------------------------ visitors, team access, rate limits
+# The public link is open to anyone, so every browser gets an anonymous visitor id (cookie). A
+# visitor's gallery shows only their own images, and only they can favourite or delete them. The
+# team is recognised as a request made on the laptop itself (http://127.0.0.1:8000 - through the
+# tunnel the Host header is the public *.gradio.live name), or with POCKETDIFF_ADMIN_KEY.
+VID_COOKIE = "pd_vid"
+_VID = re.compile(r"[0-9a-f]{32}")
+LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
+
+
+def is_admin(request: Request) -> bool:
+    key = os.environ.get("POCKETDIFF_ADMIN_KEY", "")
+    if key and hmac.compare_digest(request.headers.get("x-admin-key", ""), key):
+        return True
+    host = (request.headers.get("host") or "").rsplit(":", 1)[0].lower()
+    client = request.client.host if request.client else ""
+    forwarded = request.headers.get("x-forwarded-for") or request.headers.get("x-forwarded-host")
+    return client in LOCAL_HOSTS and host in LOCAL_HOSTS and not forwarded
+
+
+@app.middleware("http")
+async def visitor_identity(request: Request, call_next):
+    vid = request.cookies.get(VID_COOKIE, "")
+    new = not _VID.fullmatch(vid)
+    if new:
+        vid = secrets.token_hex(16)
+    request.state.vid = vid
+    request.state.admin = is_admin(request)
+    response = await call_next(request)
+    if new:
+        host = request.headers.get("host", "")
+        secure = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https" \
+            or host.endswith(".live")
+        response.set_cookie(VID_COOKIE, vid, max_age=365 * 86400, httponly=True, samesite="lax", secure=secure)
+    return response
+
+
+class RateLimiter:
+    """Sliding-window limit per visitor (the team is exempt)."""
+
+    def __init__(self, per_minute: int):
+        self.per_minute = per_minute
+        self.hits: dict[str, collections.deque] = collections.defaultdict(collections.deque)
+        self.lock = threading.Lock()
+
+    def allow(self, key: str) -> bool:
+        now = time.time()
+        with self.lock:
+            q = self.hits[key]
+            while q and now - q[0] > 60:
+                q.popleft()
+            if len(q) >= self.per_minute:
+                return False
+            q.append(now)
+            if len(self.hits) > 5000:                       # forget idle visitors
+                for k in [k for k, v in self.hits.items() if not v or now - v[-1] > 120][:2500]:
+                    self.hits.pop(k, None)
+            return True
+
+
+JOB_LIMIT = RateLimiter(int(os.environ.get("POCKETDIFF_JOBS_PER_MIN", "12")))
+PREVIEW_LIMIT = RateLimiter(90)                 # live previews: about one per keystroke pause
+_last_preview: dict[str, object] = {}
+MAX_PENDING_PER_VISITOR = 2
+
+
+def admit_job(request: Request) -> str:
+    """Owner id for a new GPU job; 429 when a visitor sends too many."""
+    vid = request.state.vid
+    if request.state.admin:
+        return vid
+    if jobs.pending_for(vid) >= MAX_PENDING_PER_VISITOR:
+        raise HTTPException(429, "You already have images in the queue - wait for them to finish.")
+    if not JOB_LIMIT.allow(vid):
+        raise HTTPException(429, "Too many images in a minute from this browser - please wait a moment.")
+    return vid
+
+
+def can_modify(request: Request, owner: str | None) -> bool:
+    return bool(request.state.admin or (owner and owner == request.state.vid))
+
+
+def public_view(g: dict, request: Request) -> dict:
+    """A generation as the API returns it: the owner id is never sent, only whether it is yours."""
+    g = dict(g)
+    g["mine"] = can_modify(request, g.pop("owner", None))
+    return g
 db = Database(DATA_DIR / "pocketdiffusion.db")
 jobs = JobManager(db, STORE)
 STORE.mkdir(parents=True, exist_ok=True)
@@ -153,6 +244,11 @@ class EditIn(BaseModel):
         if self.source_id and not GID.fullmatch(self.source_id):
             raise ValueError("bad source_id")
         return self
+
+
+class PreviewIn(BaseModel):
+    prompt: str = Field(..., min_length=1, max_length=2000)
+    seed: int | None = Field(None, ge=0, le=2**31 - 1)
 
 
 class CompareIn(BaseModel):
@@ -240,7 +336,7 @@ def baseline_ms() -> float | None:
 
 # ------------------------------------------------------------------ routes
 @app.get("/api/system")
-def system():
+def system(request: Request):
     import torch
     gpu = None
     if torch.cuda.is_available():
@@ -260,7 +356,8 @@ def system():
         "cloud": bool(os.environ.get("SPACE_ID")), "gpu_link": os.environ.get("POCKETDIFF_GPU_LINK", ""),
         "default_device": "this_gpu" if gpu else "this_cpu",
         "public_page": public_page(),
-        "features": ["generate", "edit", "attention", "share", "pwa", "compare"],
+        "admin": bool(request.state.admin),
+        "features": ["generate", "edit", "attention", "share", "pwa", "compare"] + (["preview"] if gpu else []),
     }
 
 
@@ -283,30 +380,57 @@ def plan(body: BudgetIn):
 
 
 @app.post("/api/generate")
-def generate(body: GenerateIn):
+def generate(body: GenerateIn, request: Request):
     if not body.prompt.strip():
         raise HTTPException(422, "Please enter a prompt describing the image.")
-    job = jobs.submit("generate", body.model_dump())
+    job = jobs.submit("generate", {**body.model_dump(), "owner": admit_job(request)})
     return {"job_id": job.id, "queue": jobs.queue_length()}
 
 
 @app.post("/api/compare")
-def compare(body: CompareIn):
+def compare(body: CompareIn, request: Request):
     from pocketdiff.utils import cuda_available
     if not family_available("sd15") or not cuda_available():
         raise HTTPException(503, "The race runs the SD1.5 baseline (50 steps, FP32), which needs a GPU - "
                                  "this server has none and it would take minutes per image. "
                                  "Use the GPU version of the app for the race.")
-    job = jobs.submit("compare", body.model_dump())
+    job = jobs.submit("compare", {**body.model_dump(), "owner": admit_job(request)})
     return {"job_id": job.id, "queue": jobs.queue_length()}
 
 
 @app.post("/api/edit")
-def edit(body: EditIn):
-    if body.source_id and db.get(body.source_id) is None:
+def edit(body: EditIn, request: Request):
+    if body.source_id and not db.owner_of(body.source_id)[0]:
         raise HTTPException(404, "source image not found")
-    job = jobs.submit("edit", body.model_dump())
+    job = jobs.submit("edit", {**body.model_dump(), "owner": admit_job(request)})
     return {"job_id": job.id, "queue": jobs.queue_length()}
+
+
+@app.post("/api/preview")
+async def preview(body: PreviewIn, request: Request):
+    """Live preview while typing: one fast SD-Turbo step, not stored. A newer request from the same
+    browser replaces an older one that has not started; while a full job runs the answer is busy."""
+    from pocketdiff.utils import cuda_available
+    if not cuda_available():
+        raise HTTPException(503, "Live preview needs the GPU server.")
+    if not jobs.ready.is_set():
+        raise HTTPException(503, "The models are still loading.")
+    vid = request.state.vid
+    if not request.state.admin and not PREVIEW_LIMIT.allow(vid):
+        raise HTTPException(429, "Live preview is updating too often - type a little slower.")
+    if jobs.busy_with_full_job() or jobs.q.qsize() > 2:
+        return {"busy": True}
+    old = _last_preview.get(vid)
+    if old is not None and old.status == "queued":
+        old.cancelled = True
+    job = jobs.submit("preview", {"prompt": body.prompt, "seed": body.seed, "owner": vid})
+    _last_preview[vid] = job
+    try:
+        return await wait_job(job, timeout_s=20) or {"superseded": True}
+    finally:
+        jobs.jobs.pop(job.id, None)              # previews carry an image: do not keep them around
+        if _last_preview.get(vid) is job:
+            _last_preview.pop(vid, None)
 
 
 @app.get("/api/jobs/{job_id}/events")
@@ -338,23 +462,24 @@ async def job_events(job_id: str, request: Request):
 
 
 @app.get("/api/generations")
-def list_generations(limit: int = 24, offset: int = 0, favorites: bool = False, family: str | None = None,
-                     q: str | None = None):
+def list_generations(request: Request, limit: int = 24, offset: int = 0, favorites: bool = False,
+                     family: str | None = None, q: str | None = None, mine: bool = False):
+    everyone = bool(request.state.admin) and not mine
     rows, total = db.list(limit=max(1, min(limit, 100)), offset=max(0, offset), favorites=favorites,
-                          family=family or None, q=q or None)
-    return {"items": rows, "total": total}
+                          family=family or None, q=q or None, owner=request.state.vid, everyone=everyone)
+    return {"items": [public_view(r, request) for r in rows], "total": total, "everyone": everyone}
 
 
 @app.get("/api/generations/{gid}")
-def get_generation(gid: str):
-    g = db.get(gid)
+def get_generation(gid: str, request: Request):
+    g = db.get(gid)                       # readable by id (share links); not listed for others
     if g is None:
         raise HTTPException(404, "not found")
-    return g
+    return public_view(g, request)
 
 
 @app.post("/api/generations/{gid}/attention")
-async def attention(gid: str):
+async def attention(gid: str, request: Request):
     """Explain: which image regions each prompt word influenced (cross-attention, cached)."""
     check_gid(gid)
     cached = STORE / gid / "attn" / "attention.json"
@@ -367,11 +492,16 @@ async def attention(gid: str):
         raise HTTPException(422, "Explain works for text-to-image results; this image was edited from a picture.")
     if not jobs.ready.is_set():
         raise HTTPException(503, "The models are still loading - try again in a few seconds.")
-    return await wait_job(jobs.submit("attention", {"gid": gid}), timeout_s=240)
+    return await wait_job(jobs.submit("attention", {"gid": gid, "owner": admit_job(request)}), timeout_s=240)
 
 
 @app.post("/api/generations/{gid}/favorite")
-def favorite(gid: str):
+def favorite(gid: str, request: Request):
+    exists, owner = db.owner_of(gid)
+    if not exists:
+        raise HTTPException(404, "not found")
+    if not can_modify(request, owner):
+        raise HTTPException(403, "Only the person who made this image can change it.")
     v = db.toggle_favorite(gid)
     if v is None:
         raise HTTPException(404, "not found")
@@ -379,9 +509,14 @@ def favorite(gid: str):
 
 
 @app.delete("/api/generations/{gid}")
-def delete_generation(gid: str):
+def delete_generation(gid: str, request: Request):
     if "/" in gid or "\\" in gid or ".." in gid:
         raise HTTPException(400, "bad id")
+    exists, owner = db.owner_of(gid)
+    if not exists:
+        raise HTTPException(404, "not found")
+    if not can_modify(request, owner):
+        raise HTTPException(403, "Only the person who made this image can delete it.")
     if not db.delete(gid):
         raise HTTPException(404, "not found")
     shutil.rmtree(STORE / gid, ignore_errors=True)
@@ -395,13 +530,14 @@ def stats():
 
 @app.get("/api/benchmarks")
 def benchmarks():
-    q, e = read_json("quality.json"), read_json("efficiency.json")
+    q, e, en = read_json("quality.json"), read_json("efficiency.json"), read_json("energy.json")
     comp, deg, abl = read_json("compositional.json"), read_json("degradation.json"), read_json("ablation.json")
     for v in comp.values():
         if isinstance(v, dict):
             v.pop("per_prompt", None)
     return {"quality": q, "efficiency": {k: v for k, v in e.items() if not k.startswith("_unet")},
-            "compositional": comp, "degradation": deg, "ablation": abl}
+            "compositional": comp, "degradation": deg, "ablation": abl,
+            "energy": {k: v for k, v in en.items() if not k.startswith("_")}}
 
 
 SHARE_HTML = """<!doctype html>

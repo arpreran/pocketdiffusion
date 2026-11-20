@@ -19,7 +19,7 @@ from .classical.postprocess import Stage
 from .config import MODEL_IDS, GenConfig
 from .engine import DiffusionEngine, GenResult
 from .planner import Budget, Plan, Planner
-from .prompt_analyzer import PromptAnalysis, analyze_prompt
+from .prompt_analyzer import _WORD_RE, PromptAnalysis, analyze_prompt
 from .utils import LOG
 
 
@@ -33,6 +33,8 @@ DETAIL_PASS_MAX_SIDE = 1536   # diffusion detail pass works at <= 2x native and 
 DRAWN_STYLES = {"anime", "cartoon", "illustration", "sketch", "pixel art", "watercolor", "painting",
                 "oil painting", "digital art"}
 OBJECT_WEIGHT = 1.0   # weight of per-object coverage relative to the whole-prompt CLIP score
+REPAIR_BOOSTS = (2.0, 4.0, 8.0)   # cross-attention multipliers tried in turn for a missing object's word
+REPAIR_MAX_CLIP_DROP = 2.5        # a repaired image may lose at most this much CLIP (B/32) score
 _NUM = {1: "a", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven", 8: "eight"}
 _PLURAL = {"person": "people", "mouse": "mice", "knife": "knives", "sheep": "sheep", "skis": "skis",
            "bus": "buses", "bench": "benches", "sandwich": "sandwiches", "wine glass": "wine glasses",
@@ -256,7 +258,8 @@ class PocketDiffusion:
             postprocess: str | None = None, rerank: bool = True, verify: bool = False,
             preview: bool = False, safety: bool = True, upscale_to: tuple[int, int] | None = None,
             on_step=None, semantic_rerank: bool = False, on_preview=None,
-            on_event=None, detail_pass: bool = True, face_pass: bool = True) -> RunResult:
+            on_event=None, detail_pass: bool = True, face_pass: bool = True,
+            repair: bool = True) -> RunResult:
         emit = on_event or (lambda name, data=None: None)
         timings: dict[str, float] = {}
         events: list[str] = []
@@ -347,6 +350,56 @@ class PocketDiffusion:
             chosen = int(np.argmax([c.score for c in cands]))
         raw = cands[chosen].image
 
+        # ---- missing-object repair: when the selector detector (OWL-ViT v1, never the OWLv2
+        # evaluation model) cannot find a requested object, the same seed is generated again with
+        # that word's cross-attention boosted; the result is kept only if it finds more objects,
+        # adds no distractors and keeps the prompt alignment (CLIP B/32)
+        repair_stage = None
+        names = list(dict.fromkeys(o.name for o in analysis.objects))
+        if (repair and len(names) >= 2 and not drawn_style and gen.config.device == "cuda" and budget.mode != "fast"
+                and self.selector is not None):
+            t0 = time.perf_counter()
+            vr = cand_ver.get(chosen) or self.selector.verify(raw, analysis, seed=seed)
+            found = {d.label for d in vr.detections}
+            missing = [o for o in analysis.objects if o.name not in found]
+            if missing:
+                emit("stage", {"name": "repair", "missing": [o.name for o in missing]})
+                words = _WORD_RE.findall(analysis.clean_prompt.lower())
+                boost_words = {o.name for o in missing} | {w for o in missing for w in words[o.span[0]:o.span[1]]}
+                from .attention import boosted_generate
+                msg, used, pos = None, None, []
+                c0 = None
+                for factor in REPAIR_BOOSTS:             # escalate until the object appears
+                    res2, pos = boosted_generate(self.engine, analysis.clean_prompt, gen.config,
+                                                 seed=cands[chosen].seed, words=sorted(boost_words),
+                                                 factor=factor, negative_prompt=negative_prompt)
+                    if res2 is None:                     # the words are not in the prompt's tokens
+                        break
+                    img2 = res2.images[0]
+                    vr2 = self.selector.verify(img2, analysis, seed=seed)
+                    if not (vr2.fn < vr.fn and vr2.fp <= vr.fp):
+                        continue
+                    if self.scorer is not None:
+                        if c0 is None:
+                            c0 = float(self.scorer.clip_score([raw], analysis.clean_prompt)[0])
+                        if float(self.scorer.clip_score([img2], analysis.clean_prompt)[0]) < c0 - REPAIR_MAX_CLIP_DROP:
+                            continue
+                    fixed = [o.name for o in missing if o.name in {d.label for d in vr2.detections}]
+                    raw, used = img2, factor
+                    msg = (f"Object repair: {', '.join(fixed) or 'object'} was missing -> cross-attention on "
+                           f"\"{' '.join(sorted(boost_words))}\" boosted x{factor:g}, regenerated, kept")
+                    break
+                if pos and used is None:
+                    msg = (f"Object repair tried for {', '.join(o.name for o in missing)} "
+                           f"(x{' / x'.join(f'{f:g}' for f in REPAIR_BOOSTS)}: no improvement, original kept)")
+                ms = (time.perf_counter() - t0) * 1000
+                timings["repair"] = ms
+                if msg:
+                    events.append(msg + f" ({ms:.0f} ms).")
+                if used is not None:
+                    repair_stage = Stage("object_repair", {"missing": [o.name for o in missing],
+                                                           "boost": used, "tokens": len(pos)}, ms, raw.copy())
+
         # ---- face detail pass: small faces get too few pixels for the generator to draw eyes,
         # noses and mouths -> detect them, redraw each at full resolution, blend back
         face_stage = None
@@ -376,6 +429,8 @@ class PocketDiffusion:
         post = pp(raw, target_size=None if big_target else upscale_to, measure_after=False)
         if face_stage is not None:
             post.stages.insert(0, face_stage)
+        if repair_stage is not None:
+            post.stages.insert(0, repair_stage)
         timings["postprocess"] = (time.perf_counter() - t0) * 1000
         final = post.image
 

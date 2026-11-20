@@ -110,6 +110,7 @@ class Job:
     status: str = "queued"              # queued | running | done | error
     events: list[dict] = field(default_factory=list)
     result_id: str | None = None
+    cancelled: bool = False             # live previews: superseded by a newer keystroke
     lock: threading.Lock = field(default_factory=threading.Lock)
 
     def emit(self, event: str, data: dict | None = None) -> None:
@@ -145,6 +146,16 @@ class JobManager:
         self._gc()
         return job
 
+    def pending_for(self, owner: str) -> int:
+        """Jobs of one visitor that are still queued or running."""
+        return sum(1 for j in list(self.jobs.values()) if j.kind != "preview"
+                   and j.params.get("owner") == owner and j.status in ("queued", "running"))
+
+    def busy_with_full_job(self) -> bool:
+        """A generation / edit / race is running (live previews then wait for the next keystroke)."""
+        j = self.jobs.get(self.busy_job or "")
+        return bool(j and j.kind != "preview")
+
     def queue_length(self) -> int:
         return self.q.qsize() + (1 if self.busy_job else 0)
 
@@ -157,6 +168,11 @@ class JobManager:
     def _loop(self) -> None:
         while True:
             job = self.q.get()
+            if job.cancelled:                       # a newer live preview replaced this one
+                job.status = "done"
+                job.emit("result", {"superseded": True})
+                job.emit("end", {"status": "done"})
+                continue
             self.busy_job = job.id
             job.status = "running"
             job.emit("start", {"kind": job.kind})
@@ -171,6 +187,8 @@ class JobManager:
                     self._attention(job)
                 elif job.kind == "edit":
                     self._edit(job)
+                elif job.kind == "preview":
+                    self._preview(job)
                 job.status = "done"
             except PromptRejected as e:
                 job.status = "error"
@@ -314,6 +332,31 @@ class JobManager:
         (d / "attention.json").write_text(json.dumps(out), encoding="utf-8")
         job.emit("result", out)
 
+    # ------------------------------------------------------------------ live preview while typing
+    def _preview(self, job: Job) -> None:
+        """One SD-Turbo step at 512 px, no candidates / post-processing / saving (~0.1 s on the GPU).
+        Not stored: the full pipeline runs when the user presses Generate."""
+        from pocketdiff.planner import family_available
+
+        p = job.params
+        pd = self.pipeline()
+        t0 = time.perf_counter()
+        analysis = pd.analyze(p["prompt"])
+        if not analysis.clean_prompt:
+            raise PromptRejected("empty prompt")
+        if analysis.blocked_terms:
+            raise PromptRejected(f"This prompt contains blocked terms ({', '.join(analysis.blocked_terms)}).")
+        cfg = (PRESETS["turbo1_taesd"] if family_available("sd_turbo")
+               else PRESETS["sd15_lcm4_taesd"].with_(steps=2)).with_(width=512, height=512)
+        res = pd.engine.generate(analysis.clean_prompt, cfg, seed=int(p.get("seed") or 42), n=1)
+        img = res.images[0]
+        if pd.scorer is not None and pd.scorer.safety([img])[0]["unsafe"]:
+            import cv2
+            img = cv2.GaussianBlur(img, (0, 0), 25)
+        job.emit("result", {"image": b64_jpeg(img, size=512, quality=82), "gen_ms": res.latency_ms,
+                            "total_ms": (time.perf_counter() - t0) * 1000, "model": cfg.name,
+                            "prompt": analysis.clean_prompt})
+
     # ------------------------------------------------------------------ image-to-image editing
     def _edit_source(self, p: dict) -> Image.Image:
         if p.get("source_id"):
@@ -377,6 +420,7 @@ class JobManager:
         src.thumbnail((1024, 1024))
         row = {
             "id": gid, "created_at": time.time(), "kind": "edit", "prompt": analysis.clean_prompt,
+            "owner": p.get("owner"),
             "negative_prompt": None, "seed": seed, "device_profile": "this_gpu" if gpu else "this_cpu",
             "mode": "edit", "family": cfg.family, "scheduler": cfg.scheduler, "steps": cfg.steps,
             "steps_done": math.ceil(strength * cfg.steps), "width": w, "height": h, "quant": cfg.quant,
@@ -409,6 +453,7 @@ class JobManager:
         big = max(res.image.shape[:2]) > 2048
         row = {
             "id": gid, "created_at": time.time(), "kind": kind, "prompt": res.analysis.clean_prompt,
+            "owner": job.params.get("owner"),
             "negative_prompt": job.params.get("negative_prompt"), "seed": seed,
             "device_profile": job.params.get("device_profile", "this_gpu"), "mode": job.params.get("mode", "auto"),
             "latency_budget": job.params.get("latency_ms"), "memory_budget": job.params.get("memory_mb"),

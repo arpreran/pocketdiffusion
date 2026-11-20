@@ -204,3 +204,88 @@ def test_offline_showcase_files_exist():
     assert not missing, missing
     page = (pages / "index.html").read_text(encoding="utf-8")
     assert "showcase/showcase.json" in page and "?showcase" in page
+
+
+# ------------------------------------------------------------------ public link: owners and limits
+def test_visitors_see_and_change_only_their_own_images(ctx):
+    main, _, _ = ctx
+    from fastapi.testclient import TestClient
+    alice, bob = TestClient(main.app), TestClient(main.app)
+    alice.get("/api/system")
+    bob.get("/api/system")
+    va, vb = alice.cookies.get("pd_vid"), bob.cookies.get("pd_vid")
+    assert va and vb and va != vb
+    for gid, owner in (("20260102-120000-aaaaaa", va), ("20260102-120001-bbbbbb", vb)):
+        main.db.insert_generation({"id": gid, "created_at": time.time(), "kind": "generate", "prompt": f"by {owner[:4]}",
+                                   "owner": owner, "image_path": f"{GID}/final.png"}, [], [], [])
+    mine = alice.get("/api/generations").json()
+    assert [g["id"] for g in mine["items"]] == ["20260102-120000-aaaaaa"] and mine["everyone"] is False
+    assert all(g["mine"] and "owner" not in g for g in mine["items"])
+    assert alice.post("/api/generations/20260102-120001-bbbbbb/favorite").status_code == 403
+    assert alice.delete("/api/generations/20260102-120001-bbbbbb").status_code == 403
+    assert alice.get("/api/generations/20260102-120001-bbbbbb").json()["mine"] is False   # share links still work
+    assert alice.post("/api/generations/20260102-120000-aaaaaa/favorite").json()["favorite"] is True
+    assert alice.delete("/api/generations/20260102-120000-aaaaaa").status_code == 200
+    assert alice.get("/api/system").json()["admin"] is False
+
+
+def test_team_recognised_only_on_the_laptop_itself():
+    from types import SimpleNamespace
+    import backend.main as main
+
+    def req(host, client="127.0.0.1", **headers):
+        return SimpleNamespace(headers={"host": host, **headers}, client=SimpleNamespace(host=client))
+    assert main.is_admin(req("127.0.0.1:8000"))
+    assert main.is_admin(req("localhost:8000"))
+    assert not main.is_admin(req("abc123.gradio.live"))                       # through the tunnel
+    assert not main.is_admin(req("192.168.1.5:8000", client="192.168.1.9"))  # phone on the same Wi-Fi
+    assert not main.is_admin(req("127.0.0.1:8000", **{"x-forwarded-for": "1.2.3.4"}))
+
+
+def test_rate_limiter_window():
+    import backend.main as main
+    lim = main.RateLimiter(3)
+    assert [lim.allow("v") for _ in range(4)] == [True, True, True, False]
+    assert lim.allow("other")
+
+
+# ------------------------------------------------------------------ object repair: attention boost
+def test_attention_boost_processor_shifts_attention_to_the_word():
+    import torch
+    from diffusers.models.attention_processor import Attention, AttnProcessor
+    from pocketdiff.attention import _boost_processor
+    torch.manual_seed(0)
+    attn = Attention(query_dim=16, cross_attention_dim=8, heads=2, dim_head=8)
+    x, ctx = torch.randn(1, 6, 16), torch.randn(1, 5, 8)
+    with torch.no_grad():
+        ref = AttnProcessor()(attn, x, ctx)
+        same = _boost_processor([3], 1.0, cond_only=False)(attn, x, ctx)
+        strong = _boost_processor([3], 1e4, cond_only=False)(attn, x, ctx)
+        only_3 = AttnProcessor()(attn, x, ctx[:, 3:4].expand(1, 5, 8))   # every key = token 3
+    assert torch.allclose(ref, same, atol=1e-5)                      # factor 1 changes nothing
+    assert torch.allclose(strong, only_3, atol=1e-3)                 # huge factor -> attends to token 3 only
+    assert not hasattr(attn, "get_attention_scores") or callable(attn.get_attention_scores)
+
+
+def test_boost_cond_only_leaves_unconditional_half():
+    import torch
+    from diffusers.models.attention_processor import Attention, AttnProcessor
+    from pocketdiff.attention import _boost_processor
+    torch.manual_seed(1)
+    attn = Attention(query_dim=16, cross_attention_dim=8, heads=2, dim_head=8)
+    x, ctx = torch.randn(2, 6, 16), torch.randn(2, 5, 8)             # CFG batch: [uncond, cond]
+    with torch.no_grad():
+        ref = AttnProcessor()(attn, x, ctx)
+        out = _boost_processor([2], 50.0, cond_only=True)(attn, x, ctx)
+    assert torch.allclose(out[0], ref[0], atol=1e-5) and not torch.allclose(out[1], ref[1], atol=1e-3)
+
+
+def test_planner_offers_the_tiny_model_only_when_downloaded(monkeypatch):
+    import pocketdiff.planner as P
+    from pocketdiff.prompt_analyzer import analyze_prompt
+    monkeypatch.setattr(P, "family_available", lambda f: f in ("sd15", "bk_tiny"))
+    pl = P.Planner()
+    fams = {c[0] for c in pl.candidates(P.DEVICE_PROFILES["lowend_phone"], P.Budget())}
+    assert fams == {"sd15", "bk_tiny"}
+    plan = pl.plan(analyze_prompt("a cat on a sofa"), P.Budget(device_profile="lowend_phone", latency_ms=20000))
+    assert plan.predicted_memory_mb <= P.DEVICE_PROFILES["lowend_phone"].memory_budget_mb

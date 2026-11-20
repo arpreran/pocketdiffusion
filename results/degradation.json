@@ -514,5 +514,37 @@
  "_weight_rel_error": {
   "int8": 0.010743917932268232,
   "int4": 0.11774816501885653
+ },
+ "bktiny_steps12": {
+  "group": "steps",
+  "family": "bk_tiny",
+  "steps": 12,
+  "res": 512,
+  "quant": "none",
+  "prune": 0.0,
+  "te": "full",
+  "vae": "taesd",
+  "n": 1,
+  "clip_mean": 25.14618682861328,
+  "clip_sem": 0.4204747949934272,
+  "gen_ms": 681.6240883083083,
+  "peak_mem_mb": 1844.2500081380208,
+  "weights_mb": 856.1912822723389
+ },
+ "bktiny_steps20": {
+  "group": "steps",
+  "family": "bk_tiny",
+  "steps": 20,
+  "res": 512,
+  "quant": "none",
+  "prune": 0.0,
+  "te": "full",
+  "vae": "taesd",
+  "n": 1,
+  "clip_mean": 25.734312057495117,
+  "clip_sem": 0.39749115745086216,
+  "gen_ms": 1117.5554950061876,
+  "peak_mem_mb": 1939.806640625,
+  "weights_mb": 856.1912822723389
  }
 }

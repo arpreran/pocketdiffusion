@@ -222,6 +222,23 @@ The Explain view re-runs a stored generation with the same seed and configuratio
 An uploaded or stored image is encoded with the VAE, noised to timestep strength × 999 and denoised by SD-Turbo in ⌈4 × strength⌉ steps from that point (SDEdit). A custom timestep schedule makes the strength continuous; with a plain 4-step schedule it can only start at 249, 499, 749 or 999, and the visible change jumps from a retouch to a new picture. With the prompt asking for a watercolour of the same scene, strengths up to about 0.75 keep the pose, layout and lighting and redraw details, while the painted style takes over between 0.85 and 0.9. A warm edit takes 0.46–0.54 s at 512 px on the laptop GPU; the first edit after a restart takes 2.7 s because it loads the full VAE encoder.
 <!-- /AI-DRAFTED -->
 
+#### 11. On-device generation in the browser (WebGPU, no server)
+
+| Device (browser) | Loads the model | First image | Warm image (text · UNet · VAE) |
+|---|---|---|---|
+| Laptop RTX 4060 (Edge, WebGPU) | yes | 8.7 s (kernel compilation) | **1.59 s** (48 ms · 491 ms · 1.05 s) |
+| Intel Iris Xe integrated GPU (Edge, WebGPU) | yes | GPU reset (DXGI_ERROR_DEVICE_REMOVED) | – |
+
+<!-- AI-DRAFTED -->
+The permanent page also offers an on-device mode that needs no server at all, so the project keeps working when the team laptop is switched off. SD-Turbo runs in the visitor's browser through ONNX Runtime Web on WebGPU, using a public fp16 ONNX export of the model (2.4 GB, cached by the browser after the first visit). Two problems had to be solved. Tokenisation: we wrote CLIP's byte-level BPE tokenizer in JavaScript and checked it against the transformers tokenizer on 15 difficult prompts (punctuation runs, accents, emoji, the 75-token cut-off): the token ids are identical, including SD-Turbo's quirk of mapping every "!" to its padding token. Memory: ONNX Runtime Web parses a single-file model inside its 4 GB WebAssembly heap, and the 1.6 GB UNet aborted there on both GPUs. The page therefore rewrites the model's protobuf in the browser: every large initializer's raw data is replaced by an external-data reference pointing into the downloaded file itself, so the weights are streamed to the GPU without a second copy (the rewritten model gives bit-identical outputs in ONNX Runtime). One Euler step at t = 999 and the VAE decoder then take 1.59 s on the laptop RTX 4060. Integrated graphics load the model but the driver resets during the UNet, so the page detects the lost device and says so instead of hanging.
+<!-- /AI-DRAFTED -->
+
+#### 12. Dream mode: morphing animations from one-step frames
+
+<!-- AI-DRAFTED -->
+Because SD-Turbo needs only one UNet call per image, an animation is simply a sequence of generations whose inputs change slowly. In a seed walk the initial noise moves along a great circle between the noise of two seeds; spherical rather than linear interpolation keeps the noise statistics constant, so the middle frames do not wash out. In a prompt morph the noise is fixed and the prompt embedding moves linearly from one prompt to another ("a cabin in summer" to "a cabin in winter"). Twenty-four frames, generated four at a time with smoothstep easing, take about 2.3 s (98 ms per frame) and are saved as a looping WebP.
+<!-- /AI-DRAFTED -->
+
 ### 3.3 Ablation Study
 
 #### A. Removing one component at a time (100 test prompts)

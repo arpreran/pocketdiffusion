@@ -403,6 +403,17 @@ input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border-radius: 
   cursor: pointer; font: inherit; font-size: 13px; white-space: nowrap; }
 .install-btn:hover { border-color: var(--a1); }
 @media (max-width: 900px) { .install-btn { padding: 0 9px; } }
+.device-link { display: inline-flex; align-items: center; text-decoration: none; background: linear-gradient(120deg, color-mix(in srgb, var(--a3) 30%, transparent), color-mix(in srgb, var(--a2) 30%, transparent)); }
+@media (max-width: 900px) { .device-link { display: none; } }
+/* dream mode */
+.dream-row { display: flex; gap: 8px; margin-top: 10px; }
+.dream-row input { flex: 1; min-width: 0; background: color-mix(in srgb, var(--card-solid) 70%, transparent); border: 1px solid var(--line2);
+  color: var(--text); border-radius: 12px; padding: 10px 12px; font: inherit; font-size: 13px; }
+.dream-btn { flex: none; border: 0; border-radius: 12px; padding: 0 16px; font: 600 14px var(--sans); color: #fff; cursor: pointer;
+  background: linear-gradient(120deg, #f472b6, #8b5cf6, #06b6d4, #f472b6); background-size: 300% 100%; animation: dreamflow 6s linear infinite; }
+.dream-btn:disabled { opacity: .55; cursor: wait; }
+@keyframes dreamflow { to { background-position: 300% 0; } }
+@media (prefers-reduced-motion: reduce) { .dream-btn { animation: none; } }
 /* live preview while typing */
 .prompt-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; }
 .prompt-tools .ghost-btn { margin-top: 10px; }
@@ -412,3 +423,43 @@ input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border-radius: 
 .stage-live.previewing .ring { display: none; }
 /* live preview before the first denoising step: no broken-image alt text */
 #liveImg:not([src]) { visibility: hidden; }
+
+/* ---------- v1.8: motion & wow (all disabled for prefers-reduced-motion) ---------- */
+/* spotlight: cards glow where the pointer is */
+.card { --mx: 50%; --my: 50%; }
+.card.spot { background-image: radial-gradient(600px circle at var(--mx) var(--my), color-mix(in srgb, var(--a1) 10%, transparent), transparent 40%); }
+/* diffusion-style reveal of a finished image */
+.compare-wrap .layer.reveal { animation: pdreveal 1.2s cubic-bezier(.2, .7, .2, 1); }
+@keyframes pdreveal {
+  0% { filter: blur(26px) saturate(1.8) brightness(1.15); transform: scale(1.05); opacity: .25; }
+  60% { filter: blur(3px) saturate(1.2); opacity: 1; }
+  100% { filter: none; transform: none; opacity: 1; }
+}
+.stage.flash::after { content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
+  background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, .35), transparent 60%); animation: pdflash .7s ease-out forwards; }
+@keyframes pdflash { from { opacity: 1; } to { opacity: 0; } }
+/* holographic tilt on gallery cards */
+.gcard { transform-style: preserve-3d; transition: transform .18s ease, box-shadow .18s ease; will-change: transform; }
+.gcard.tilt { box-shadow: 0 24px 50px -20px rgba(139, 92, 246, .55); }
+.gcard::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0; transition: opacity .2s;
+  background: radial-gradient(400px circle at var(--gx, 50%) var(--gy, 50%), rgba(255, 255, 255, .22), transparent 45%); mix-blend-mode: overlay; }
+.gcard.tilt::after { opacity: 1; }
+/* particles on Generate */
+.burst { position: fixed; inset: 0; pointer-events: none; z-index: 60; }
+/* headline ticker in the top bar */
+.ticker { font: 12px var(--mono); color: var(--muted); white-space: nowrap; overflow: hidden; max-width: 320px; }
+.ticker span { display: inline-block; animation: tick .5s ease; }
+.ticker b { color: var(--text); font-weight: 600; }
+@keyframes tick { from { transform: translateY(100%); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (max-width: 1100px) { .ticker { display: none; } }
+/* animated gradient ring around the Generate button */
+.go { position: relative; isolation: isolate; }
+.go::before { content: ""; position: absolute; inset: -2px; border-radius: inherit; z-index: -1;
+  background: conic-gradient(from var(--ang, 0deg), var(--a1), var(--a2), var(--a3), var(--a1)); animation: goring 4s linear infinite; filter: blur(6px); opacity: .7; }
+@property --ang { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+@keyframes goring { to { --ang: 360deg; } }
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: .28s; }
+@media (prefers-reduced-motion: reduce) {
+  .compare-wrap .layer.reveal, .stage.flash::after, .ticker span, .go::before { animation: none !important; }
+  .gcard { transition: none; }
+}

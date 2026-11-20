@@ -121,10 +121,11 @@
 
   <div class="links">
     <a id="open" class="btn primary hidden" href="#">Open the live demo</a>
+    <a id="device" class="btn hidden" href="device/">✦ Make images on this device</a>
     <a class="btn" href="https://github.com/arpreran/pocketdiffusion">Source code &amp; report (GitHub)</a>
   </div>
   <footer id="foot">This page always opens the current demo link. The demo runs on the team's laptop GPU, so it is available while that laptop is switched on and online; a cloud copy is used as a backup when it is enabled.
-    <a href="?showcase" id="showLink">See sample results</a></footer>
+    <a href="?showcase" id="showLink">See sample results</a> · <a href="device/">Run it in your browser (WebGPU)</a></footer>
 </main>
 
 <section id="showcase" class="showcase hidden" aria-labelledby="scTitle">
@@ -220,6 +221,8 @@ function go(url, s, where) {
   const target = SHARE ? `${url}/share/${SHARE[0]}` : url;
   $("open").href = target;
   $("open").onclick = null;
+  $("open").classList.add("primary");
+  $("device").classList.remove("primary");
   $("open").textContent = "Open the live demo";
   $("open").classList.remove("hidden");
   if (SHOWCASE) {                                  // visitor asked for the results: do not redirect
@@ -244,9 +247,11 @@ async function check() {
        "If the cloud copy is enabled, its first start after a quiet period takes 1–2 minutes.");
   try { return go(cloud, await probe(cloud, 180000), "cloud"); } catch {}
   show("off", "The demo laptop is asleep or offline right now",
-       "PocketDiffusion runs on the team's laptop GPU. Keep this page open: it checks every 15 seconds " +
-       "and opens the demo by itself as soon as the laptop is back online. Meanwhile, real results are shown below.");
-  $("open").classList.remove("hidden");
+       "You can still make images: the on-device mode runs SD-Turbo in this browser on your own GPU (WebGPU, no server). " +
+       "This page also checks every 15 seconds and opens the live demo by itself when the laptop is back. Real results are below.");
+  $("device").classList.remove("hidden");
+  $("device").classList.add("primary");
+  $("open").classList.remove("hidden", "primary");
   $("open").textContent = "Try again now";
   $("open").href = "#";
   $("open").onclick = (e) => { e.preventDefault(); clearTimeout(retry); check(); };

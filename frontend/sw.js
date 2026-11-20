@@ -4,8 +4,8 @@
  *  - API calls and the live event stream: always the network (never cached)
  */
 "use strict";
-const VERSION = "pd-v1.7";
-const SHELL = ["/", "/static/styles.css?v=1.7", "/static/app.js?v=1.7", "/static/icons/icon-192.png",
+const VERSION = "pd-v1.8";
+const SHELL = ["/", "/static/styles.css?v=1.8", "/static/app.js?v=1.8", "/static/icons/icon-192.png",
   "/static/icons/icon-512.png", "/manifest.webmanifest"];
 const MEDIA = "pd-media-v1";
 const MEDIA_MAX = 300;

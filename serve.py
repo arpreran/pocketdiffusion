@@ -192,10 +192,11 @@ def publish_live_url(url: str) -> None:
             git("pull", "--ff-only", "--depth", "1")
         src = ROOT_DIR / "deploy" / "pages"
         shutil.copyfile(src / "index.html", PAGES_DIR / "index.html")
-        if (src / "showcase").exists():          # offline showcase: shown while the laptop is offline
-            shutil.rmtree(PAGES_DIR / "showcase", ignore_errors=True)
-            shutil.copytree(src / "showcase", PAGES_DIR / "showcase",
-                            ignore=shutil.ignore_patterns("selection.json"))
+        # offline showcase (shown while the laptop is offline) and the on-device WebGPU studio
+        for sub in ("showcase", "device"):
+            if (src / sub).exists():
+                shutil.rmtree(PAGES_DIR / sub, ignore_errors=True)
+                shutil.copytree(src / sub, PAGES_DIR / sub, ignore=shutil.ignore_patterns("selection.json"))
         (PAGES_DIR / "live.json").write_text(
             json.dumps({"url": url, "updated": time.strftime("%d %b %Y, %H:%M")}) + "\n", encoding="utf-8")
         git("add", "-A")

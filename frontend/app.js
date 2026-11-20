@@ -65,8 +65,20 @@ const debounce = (fn, ms) => { let h; return (...a) => { clearTimeout(h); h = se
 const store = { get(k, d) { try { return localStorage.getItem(k) ?? d; } catch { return d; } }, set(k, v) { try { localStorage.setItem(k, v); } catch { /* private mode */ } } };
 
 /* ------------------------------------------------------------------ tabs + theme */
+const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
 function showTab(name) {
   if (!$(`#view-${name}`)) name = "studio";
+  const switching = !$(`#view-${name}`).classList.contains("active");
+  if (switching && document.startViewTransition && !REDUCED && document.querySelector(".view.active")) {
+    // animated cross-fade; the callback switches the tab directly (never re-enters this branch)
+    const vt = document.startViewTransition(() => applyTab(name));
+    vt.ready?.catch(() => {});
+    vt.finished?.catch(() => {});
+    return;
+  }
+  applyTab(name);
+}
+function applyTab(name) {
   $$(".view").forEach((v) => v.classList.toggle("active", v.id === `view-${name}`));
   $$(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
   if (location.hash !== `#${name}`) history.replaceState(null, "", `#${name}`);
@@ -117,6 +129,8 @@ function initFromSystem(s) {
   $("#preset").innerHTML = `<option value="planner">Adaptive planner</option>` +
     s.presets.map((p) => `<option value="${esc(p.key)}">${esc(p.key)} — ${esc(p.description)}</option>`).join("");
   if (!$("#prompt").value) { $("#prompt").value = s.examples[0]; }
+  if ((s.features || []).includes("dream")) $("#dreamRow").classList.remove("hidden");
+  if (s.public_page) $("#deviceLink").href = `${s.public_page.replace(/\/?$/, "/")}device/`;
   if ((s.features || []).includes("preview")) {          // GPU server: offer the live preview
     $("#liveToggle").classList.remove("hidden");
     $("#livePreview").checked = livePrev.on = store.get("pd-live", "0") === "1";
@@ -240,6 +254,30 @@ $("#livePreview").addEventListener("change", (e) => {
   }
 });
 $("#prompt").addEventListener("input", () => runLivePreview());
+
+/* ------------------------------------------------------------------ dream mode */
+const dreamVideo = (g) => g.metrics?.dream?.video || (g.image_path || "").replace(/[^/]+$/, "dream.webp");
+async function startDream() {
+  if (state.busy) return;
+  const s = settings();
+  if (!s.prompt.trim()) { toast("Type a prompt first — Dream animates it.", "warn"); $("#prompt").focus(); return; }
+  const to = $("#dreamTo").value.trim();
+  setBusy(true);
+  $("#dreamBtn").disabled = true;
+  resetRun();
+  showTab("studio");
+  try {
+    const { job_id } = await api("/api/dream", { method: "POST", body: { prompt: s.prompt, prompt_b: to ? styledPrompt(to) : "", seed: s.seed, frames: 24 } });
+    listen(job_id);
+  } catch (e) {
+    toast(e.message, "err");
+    setBusy(false);
+    $("#stageLive").classList.add("hidden");
+    $(state.result ? "#stageFinal" : "#stageEmpty").classList.remove("hidden");
+  }
+}
+$("#dreamBtn").addEventListener("click", startDream);
+$("#dreamTo").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); startDream(); } });
 
 /* ------------------------------------------------------------------ image-to-image source */
 function setEditSource(src) {
@@ -368,6 +406,7 @@ function setBusy(b) {
   state.busy = b;
   const go = $("#goBtn");
   go.disabled = b;
+  if (!b && $("#dreamBtn")) $("#dreamBtn").disabled = false;
   go.classList.toggle("busy", b);
   $(".go-label", go).textContent = b ? (state.edit ? "Editing…" : "Generating…") : (state.edit ? "Edit image" : "Generate");
 }
@@ -442,6 +481,13 @@ function listen(id) {
       $("#frames").appendChild(fig);
     }
   });
+  on("frame", (d) => {                              // dream mode: frames stream in like a video
+    $("#stepTxt").textContent = `${d.i}/${d.total}`;
+    $("#ringArc").style.strokeDashoffset = 326.7 * (1 - d.i / d.total);
+    $("#stageTxt").textContent = "dreaming";
+    $("#liveImg").src = d.image;
+    $("#liveImg").style.filter = "none";
+  });
   on("result", (g) => { finished = true; trackSet("done"); renderResult(g); });
   on("error", (d) => { if (d && d.message) { finished = true; toast(d.message, "err", 7000); } });
   on("end", (d) => {
@@ -483,11 +529,21 @@ function renderResult(g) {
     hd.classList.add("hidden");
   }
   // edits: "Raw" is the original picture; artifacts / detections / explain are text-to-image views
-  const isEdit = g.kind === "edit";
+  const isEdit = g.kind === "edit", isDream = g.kind === "dream";
   $('#viewToggles [data-view="raw"]').textContent = isEdit ? "Original" : "Raw";
-  ["heat", "boxes", "explain"].forEach((v) => $(`#viewToggles [data-view="${v}"]`).classList.toggle("hidden", isEdit));
+  ["heat", "boxes", "explain"].forEach((v) => $(`#viewToggles [data-view="${v}"]`).classList.toggle("hidden", isEdit || isDream));
+  ["raw", "split"].forEach((v) => $(`#viewToggles [data-view="${v}"]`).classList.toggle("hidden", isDream));
+  if (isDream) {                                      // download the animation itself
+    $("#downloadBtn").href = media(dreamVideo(g));
+    $("#downloadBtn").setAttribute("download", `pocketdiffusion-dream-${g.id}.webp`);
+  }
   if (state.explain && state.explain.id !== g.id) { state.explain = null; state.explainSel = -1; }
   setView("final");
+  if (!REDUCED) {                                   // diffusion-style reveal + flash
+    const A = $("#imgA");
+    A.classList.toggle("reveal", false); void A.offsetWidth; A.classList.add("reveal");
+    $("#stage").classList.toggle("flash", false); void $("#stage").offsetWidth; $("#stage").classList.add("flash");
+  }
 
   // telemetry
   $("#latBig").textContent = fmtMs(g.latency_ms);
@@ -570,7 +626,7 @@ function setView(v) {
   $("#boxes").innerHTML = "";
   $("#explainBar").classList.toggle("hidden", v !== "explain");
   if (v === "explain") { showExplain(g); return; }
-  if (v === "final" || v === "boxes") A.src = media(g.image_path);
+  if (v === "final" || v === "boxes") A.src = media(g.kind === "dream" ? dreamVideo(g) : g.image_path);
   if (v === "raw") A.src = media(g.raw_path);
   if (v === "heat") A.src = media(g.heatmap_path);
   if (v === "split") {
@@ -697,10 +753,10 @@ async function loadGallery(reset = false) {
 }
 function cardHtml(g) {
   return `<div class="gcard" data-id="${esc(g.id)}">
-    <img loading="lazy" src="${media(g.image_path)}" alt="${esc(g.prompt)}">
+    <img loading="lazy" src="${media(g.kind === "dream" ? dreamVideo(g) : g.image_path)}" alt="${esc(g.prompt)}">
     ${g.mine === false ? "" : `<button class="fav ${g.favorite ? "on" : ""}" data-fav="${esc(g.id)}" title="Favourite">${g.favorite ? "★" : "☆"}</button>`}
     <div class="meta"><p>${esc(g.prompt)}</p><div class="badges">
-      ${g.kind === "edit" ? "<span>✎ edit</span>" : ""}<span>${esc(FAMILY[g.family] || g.family)} · ${g.steps}st</span><span>${fmtMs(g.latency_ms)}</span>${g.clip != null ? `<span>CLIP ${num(g.clip, 1)}</span>` : ""}${g.object_f1 != null ? `<span>F1 ${num(g.object_f1, 2)}</span>` : ""}</div></div></div>`;
+      ${g.kind === "edit" ? "<span>✎ edit</span>" : ""}${g.kind === "dream" ? "<span>✦ dream</span>" : ""}<span>${esc(FAMILY[g.family] || g.family)} · ${g.steps}st</span><span>${fmtMs(g.latency_ms)}</span>${g.clip != null ? `<span>CLIP ${num(g.clip, 1)}</span>` : ""}${g.object_f1 != null ? `<span>F1 ${num(g.object_f1, 2)}</span>` : ""}</div></div></div>`;
 }
 $("#gGrid").addEventListener("click", async (e) => {
   const fav = e.target.closest("[data-fav]");
@@ -733,7 +789,7 @@ async function openDetail(id) {
       ["NIQE", `${num(g.niqe_before, 2)} → ${num(g.niqe_after, 2)}`], ["object F1", num(g.object_f1, 2)],
       ["device", SHORT[g.device_profile] || g.device_profile], ["mode", g.mode], ["created", new Date(g.created_at * 1000).toLocaleString()]];
     openModal(`<div class="detail">
-      <div><img class="main" src="${media(g.image_path)}" alt=""></div>
+      <div><img class="main" src="${media(g.kind === "dream" ? dreamVideo(g) : g.image_path)}" alt=""></div>
       <div><h3>${esc(g.prompt)}</h3>
         <div class="kvs">${kv.map(([k, v]) => `<div><small>${esc(k)}</small>${esc(v)}</div>`).join("")}</div>
         <div class="strip cands" style="margin-top:12px">${(g.candidates || []).map((x) => `<figure class="${x.chosen ? "chosen" : ""}"><img src="${media(x.image_path)}" alt=""><figcaption>${x.chosen ? "✔ " : ""}${x.clip != null ? `CLIP ${num(x.clip, 1)}` : `seed ${x.seed}`}</figcaption></figure>`).join("")}</div>
@@ -942,6 +998,57 @@ $("#raceBtn").addEventListener("click", async () => {
     es.onerror = () => { if (es.readyState !== EventSource.CLOSED) { es.close(); $("#raceBtn").disabled = false; } };
   } catch (e) { toast(e.message, "err"); $("#raceBtn").disabled = false; }
 });
+
+/* ------------------------------------------------------------------ motion: spotlight, tilt, burst, ticker */
+function untilt(x) { x.classList.toggle("tilt", false); x.style.transform = ""; }
+if (!REDUCED) {
+  document.addEventListener("pointermove", (e) => {
+    const c = e.target.closest?.(".card");
+    if (c) {
+      const r = c.getBoundingClientRect();
+      c.classList.add("spot");
+      c.style.setProperty("--mx", `${e.clientX - r.left}px`);
+      c.style.setProperty("--my", `${e.clientY - r.top}px`);
+    }
+    const g = e.target.closest?.(".gcard");
+    $$(".gcard.tilt").forEach((x) => { if (x !== g) untilt(x); });
+    if (g && e.pointerType === "mouse") {
+      const r = g.getBoundingClientRect(), x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
+      g.classList.add("tilt");
+      g.style.transform = `perspective(700px) rotateX(${(0.5 - y) * 10}deg) rotateY(${(x - 0.5) * 12}deg) scale(1.02)`;
+      g.style.setProperty("--gx", `${x * 100}%`); g.style.setProperty("--gy", `${y * 100}%`);
+    }
+  }, { passive: true });
+  document.addEventListener("pointerleave", () => $$(".gcard.tilt").forEach(untilt));
+}
+function burst(x, y) {
+  if (REDUCED) return;
+  const cv = document.createElement("canvas");
+  cv.className = "burst"; cv.width = innerWidth * devicePixelRatio; cv.height = innerHeight * devicePixelRatio;
+  document.body.appendChild(cv);
+  const ctx = cv.getContext("2d"), cols = ["#8b5cf6", "#06b6d4", "#f472b6", "#fbbf24", "#34d399"];
+  const ps = Array.from({ length: 70 }, () => ({ x: x * devicePixelRatio, y: y * devicePixelRatio, a: Math.random() * Math.PI * 2,
+    v: (2 + Math.random() * 7) * devicePixelRatio, r: (1.5 + Math.random() * 3) * devicePixelRatio, c: cols[(Math.random() * cols.length) | 0], life: 1 }));
+  const step = () => {
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    let alive = 0;
+    for (const p of ps) {
+      if (p.life <= 0) continue;
+      alive++;
+      p.x += Math.cos(p.a) * p.v; p.y += Math.sin(p.a) * p.v + (1 - p.life) * 3 * devicePixelRatio; p.v *= 0.95; p.life -= 0.022;
+      ctx.globalAlpha = Math.max(p.life, 0); ctx.fillStyle = p.c; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+    }
+    if (alive) requestAnimationFrame(step); else cv.parentNode && cv.parentNode.removeChild(cv);
+  };
+  requestAnimationFrame(step);
+}
+["#goBtn", "#dreamBtn"].forEach((s) => $(s)?.addEventListener("pointerdown", (e) => burst(e.clientX, e.clientY)));
+const TICKS = ["<b>85 ms</b> per image · SD-Turbo, 1 step", "<b>152×</b> less energy than the SD1.5 baseline",
+  "<b>7 J</b> of GPU energy per image", "<b>732 MB</b> peak memory · BK-SDM-Tiny INT8", "<b>0.960</b> object F1 on 58 complex prompts",
+  "runs <b>in your browser</b> too · WebGPU · ~1.6 s", "<b>Dream</b>: 24-frame morph in ~2 s"];
+let tickI = 0;
+function tick() { $("#ticker").innerHTML = `<span>⚡ ${TICKS[tickI++ % TICKS.length]}</span>`; }
+tick(); setInterval(tick, 4000);
 
 /* ------------------------------------------------------------------ installable app (PWA) */
 if ("serviceWorker" in navigator && window.isSecureContext) {

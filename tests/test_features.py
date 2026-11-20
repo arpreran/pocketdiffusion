@@ -289,3 +289,75 @@ def test_planner_offers_the_tiny_model_only_when_downloaded(monkeypatch):
     assert fams == {"sd15", "bk_tiny"}
     plan = pl.plan(analyze_prompt("a cat on a sofa"), P.Budget(device_profile="lowend_phone", latency_ms=20000))
     assert plan.predicted_memory_mb <= P.DEVICE_PROFILES["lowend_phone"].memory_budget_mb
+
+
+# ------------------------------------------------------------------ on-device (WebGPU) page helpers
+def _node():
+    import shutil
+    return shutil.which("node")
+
+
+def _sd_turbo_web_snapshot():
+    import glob
+    import os
+    snaps = glob.glob(os.path.expanduser("~/.cache/huggingface/hub/models--schmuell--sd-turbo-ort-web/snapshots/*"))
+    return Path(snaps[0]) if snaps else None
+
+
+def test_browser_tokenizer_matches_python_clip_tokenizer(tmp_path):
+    import subprocess
+    snap = _sd_turbo_web_snapshot()
+    if not _node() or snap is None:
+        pytest.skip("needs node and the cached schmuell/sd-turbo-ort-web tokenizer")
+    from transformers import CLIPTokenizer
+    tok = CLIPTokenizer.from_pretrained(str(snap / "tokenizer"))
+    prompts = ["a cozy wooden cabin in a snowy forest at night, warm light", "moon!! wow...", "café 日本 🚀 8K, f/2.8",
+               " ".join(["word"] * 120)]
+    expected = [tok(p, padding="max_length", max_length=77, truncation=True)["input_ids"] for p in prompts]
+    js = Path(__file__).resolve().parents[1] / "deploy" / "pages" / "device" / "clip-tokenizer.js"
+    script = (f"const fs=require('fs');const {{ClipTokenizer}}=require({json.dumps(str(js))});"
+              f"const t=new ClipTokenizer(JSON.parse(fs.readFileSync({json.dumps(str(snap / 'tokenizer' / 'vocab.json'))},'utf8')),"
+              f"fs.readFileSync({json.dumps(str(snap / 'tokenizer' / 'merges.txt'))},'utf8'));"
+              f"console.log(JSON.stringify({json.dumps(prompts)}.map(p=>t.inputIds(p).ids)));")
+    out = subprocess.run([_node(), "-e", script], capture_output=True, text=True, timeout=60, encoding="utf-8")
+    assert json.loads(out.stdout) == expected
+
+
+def test_browser_onnx_split_gives_identical_outputs(tmp_path):
+    import subprocess
+    ort = pytest.importorskip("onnxruntime")
+    onnx = pytest.importorskip("onnx")
+    if not _node():
+        pytest.skip("needs node")
+    from onnx import TensorProto, helper, numpy_helper
+    rng = np.random.default_rng(0)
+    w = numpy_helper.from_array(rng.standard_normal((64, 32)).astype(np.float32), "W")     # 8 KB -> external
+    b = numpy_helper.from_array(rng.standard_normal((32,)).astype(np.float32), "B")        # 128 B -> inline
+    g = helper.make_graph([helper.make_node("MatMul", ["X", "W"], ["Y0"]), helper.make_node("Add", ["Y0", "B"], ["Y"])],
+                          "g", [helper.make_tensor_value_info("X", TensorProto.FLOAT, [2, 64])],
+                          [helper.make_tensor_value_info("Y", TensorProto.FLOAT, [2, 32])], initializer=[w, b])
+    src = tmp_path / "m.onnx"
+    onnx.save(helper.make_model(g, opset_imports=[helper.make_opsetid("", 17)]), src)
+    js = Path(__file__).resolve().parents[1] / "deploy" / "pages" / "device" / "onnx-external.js"
+    script = (f"const fs=require('fs');const {{splitExternal}}=require({json.dumps(str(js))});"
+              f"const m=new Uint8Array(fs.readFileSync({json.dumps(str(src))}));const r=splitExternal(m);"
+              f"fs.writeFileSync({json.dumps(str(tmp_path / 'g.onnx'))},r.graph);"
+              f"fs.copyFileSync({json.dumps(str(src))},{json.dumps(str(tmp_path / 'model.onnx.data'))});"
+              f"console.log(JSON.stringify(r.stats));")
+    stats = json.loads(subprocess.run([_node(), "-e", script], capture_output=True, text=True, timeout=60).stdout)
+    assert stats["tensors"] == 1                                       # only the large weight moved out
+    x = rng.standard_normal((2, 64)).astype(np.float32)
+    ref = ort.InferenceSession(str(src), providers=["CPUExecutionProvider"]).run(None, {"X": x})[0]
+    got = ort.InferenceSession(str(tmp_path / "g.onnx"), providers=["CPUExecutionProvider"]).run(None, {"X": x})[0]
+    assert np.array_equal(ref, got)
+
+
+def test_dream_slerp_and_ping_pong():
+    import torch
+    from pocketdiff.dream import ease, ping_pong, slerp
+    a, b = torch.randn(1, 4, 8, 8), torch.randn(1, 4, 8, 8)
+    assert torch.allclose(slerp(a, b, 0.0), a, atol=1e-5) and torch.allclose(slerp(a, b, 1.0), b, atol=1e-5)
+    mid = slerp(a, b, 0.5)
+    assert abs(mid.norm().item() - (a.norm().item() + b.norm().item()) / 2) < 0.15 * a.norm().item()   # no wash-out
+    assert ease(0) == 0 and ease(1) == 1 and 0.49 < ease(0.5) < 0.51
+    assert ping_pong([1, 2, 3, 4]) == [1, 2, 3, 4, 3, 2]

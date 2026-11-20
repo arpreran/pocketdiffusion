@@ -34,7 +34,9 @@ Full benchmark tables, ablation studies, and failure cases are documented in `ev
 
 **https://arpreran.github.io/pocketdiffusion/** — permanent demo address.
 
-The page forwards to the demo running on the team's RTX 4060 laptop (it re-checks the current tunnel link, so the address never changes). The laptop has to be switched on, awake and online. When it is not, the page says so, reconnects by itself every 15 seconds, and meanwhile shows an **offline showcase**: real results with their prompts, models and timings, Explain heat maps, an image-to-image edit and a screen recording of the app. To see the showcase at any time: **https://arpreran.github.io/pocketdiffusion/?showcase**. It is rebuilt with `python scripts/build_showcase.py` and `scripts/record_walkthrough.py`.
+The page forwards to the demo running on the team's RTX 4060 laptop (it re-checks the current tunnel link, so the address never changes). The laptop has to be switched on, awake and online. When it is not, the page says so, reconnects by itself every 15 seconds, and meanwhile shows an **offline showcase**: real results with their prompts, models and timings, Explain heat maps, an image-to-image edit and a screen recording of the app. To see the showcase at any time: **https://arpreran.github.io/pocketdiffusion/?showcase**.
+
+**On-device mode — works with the laptop off:** **https://arpreran.github.io/pocketdiffusion/device/** runs SD-Turbo in the visitor's own browser on their own GPU (WebGPU, ONNX Runtime Web), with no server. The model (2.4 GB) is downloaded once from Hugging Face and cached by the browser. Measured: about 1.6 s per image on a laptop RTX 4060 in Edge (the first image takes ~9 s while the GPU kernels compile). It needs Chrome or Edge with WebGPU and a dedicated GPU; integrated graphics (tested: Intel Iris Xe) reset during the 1.6 GB UNet and are reported as not supported. It is rebuilt with `python scripts/build_showcase.py` and `scripts/record_walkthrough.py`.
 
 A serverless cloud copy is configured in `deploy/modal_app.py` (`https://arpreran--pocketdiffusion.us-east.modal.run`, CPU only). The page uses it as a backup when it is enabled; at the moment Modal has disabled the workspace, so it is not available.
 
@@ -85,7 +87,7 @@ docker build -t pocketdiffusion . && docker run --gpus all -p 8000:8000 -v pdata
 
 API endpoints:
 
-`GET /api/system` · `POST /api/analyze` · `POST /api/plan` · `POST /api/generate` · `GET /api/jobs/{id}/events` (SSE) · `GET/DELETE /api/generations[/{id}]` · `POST /api/generations/{id}/favorite` · `GET /api/stats` · `GET /api/benchmarks` · `POST /api/compare` · `POST /api/edit` · `POST /api/generations/{id}/attention` · `POST /api/preview` · `GET /share/{id}` · `GET /manifest.webmanifest` · `GET /sw.js`
+`GET /api/system` · `POST /api/analyze` · `POST /api/plan` · `POST /api/generate` · `GET /api/jobs/{id}/events` (SSE) · `GET/DELETE /api/generations[/{id}]` · `POST /api/generations/{id}/favorite` · `GET /api/stats` · `GET /api/benchmarks` · `POST /api/compare` · `POST /api/edit` · `POST /api/generations/{id}/attention` · `POST /api/preview` · `POST /api/dream` · `GET /share/{id}` · `GET /manifest.webmanifest` · `GET /sw.js`
 
 ---
 
@@ -152,7 +154,15 @@ The evaluation scripts generate the reported measurements rather than relying on
 | **Energy per image** | `eval/bench_energy.py`, Lab tab | Joules per image for every configuration from the GPU's energy counter (`results/energy.json`). |
 | **BK-SDM-Tiny** | `config.py`, `planner.py` | Smaller distilled UNet (0.32 B params) as a low-memory tier for the planner and the model menu. |
 
-The v1.6 and v1.7 features were implemented with AI assistance (Claude).
+### Extra features (v1.8)
+
+| Feature | Where | What it does |
+|---|---|---|
+| **On-device generation (WebGPU)** | `deploy/pages/device/` | SD-Turbo in the browser: our CLIP BPE tokenizer in JavaScript (token-identical to transformers on the test prompts), a zero-copy protobuf rewrite that moves the weights to "external data" so the 1.6 GB UNet fits ONNX Runtime Web's 4 GB WebAssembly heap, one Euler step at t = 999 and the VAE decoder. |
+| **Dream mode** | `pocketdiff/dream.py`, `POST /api/dream` | A morphing animation: 24 one-step frames whose initial noise moves along a sphere between two seeds (seed walk) or whose prompt embedding moves from prompt A to prompt B (prompt morph); ~2.3 s for 24 frames, saved as a looping WebP and shown in the gallery. |
+| **Motion UI** | `frontend/` | Diffusion-style reveal of results, pointer spotlight on cards, 3D tilt on gallery cards, particle burst on Generate, view transitions between tabs, live headline ticker — all switched off for `prefers-reduced-motion`. |
+
+The v1.6, v1.7 and v1.8 features were implemented with AI assistance (Claude).
 
 ---
 

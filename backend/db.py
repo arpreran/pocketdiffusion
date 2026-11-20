@@ -163,7 +163,7 @@ class Database:
     def list(self, limit: int = 24, offset: int = 0, favorites: bool = False, family: str | None = None,
              q: str | None = None, owner: str | None = None, everyone: bool = False) -> tuple[list[dict], int]:
         """Gallery page. Visitors see only their own images (`owner`); the team sees all (`everyone`)."""
-        where, args = ["kind IN ('generate', 'edit')"], []
+        where, args = ["kind IN ('generate', 'edit', 'dream')"], []
         if not everyone:
             where.append("owner = ?")
             args.append(owner or "")

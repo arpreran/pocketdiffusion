@@ -14,7 +14,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="PocketDiffusion">
   <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
-  <link rel="stylesheet" href="/static/styles.css?v=1.7">
+  <link rel="stylesheet" href="/static/styles.css?v=1.8">
 </head>
 <body>
   <div class="aurora" aria-hidden="true"><span></span><span></span><span></span></div>
@@ -37,7 +37,9 @@
       <button class="tab" data-tab="race" role="tab">Race</button>
       <button class="tab" data-tab="about" role="tab">How it works</button>
     </nav>
+    <div class="ticker" id="ticker" aria-live="off"></div>
     <div class="top-right">
+      <a class="install-btn device-link" id="deviceLink" href="https://arpreran.github.io/pocketdiffusion/device/" target="_blank" rel="noopener" title="Run SD-Turbo in your own browser with WebGPU - no server">✦ On-device</a>
       <button class="install-btn hidden" id="installBtn" type="button" title="Install PocketDiffusion as an app on this device">⊕ Install app</button>
       <div class="status-pill" id="statusPill" title="Backend status">
         <span class="dot"></span><span id="statusText">connecting…</span>
@@ -138,6 +140,10 @@
           </div>
 
           <button class="go" id="goBtn" type="button"><span class="go-label">Generate</span><kbd>Ctrl ↵</kbd></button>
+          <div class="dream-row hidden" id="dreamRow">
+            <input type="text" id="dreamTo" maxlength="500" placeholder="Morph into… (optional second prompt)" aria-label="Second prompt for the morph">
+            <button class="dream-btn" id="dreamBtn" type="button" title="Dream: a morphing animation made of 24 one-step frames (~1 s)">✦ Dream</button>
+          </div>
         </aside>
 
         <!-- centre: stage -->
@@ -290,6 +296,8 @@
           <div><h4>Image-to-image editing</h4><p>Upload a photo or pick a result, describe the change and set how much may change: the picture is encoded by the VAE, noised to that strength and redrawn by SD-Turbo in 1–4 steps (SDEdit). Low strength keeps the layout; high strength follows the prompt.</p></div>
           <div><h4>Live preview &amp; object repair</h4><p>With <b>Live preview</b> on, every pause in typing renders a 1-step SD-Turbo sketch (~0.1–0.25 s, not saved). After generation, if the selection detector cannot find a requested object, that word's cross-attention is boosted (×2 → ×4 → ×8) and the same seed is regenerated; the new image is kept only if it finds more objects without losing prompt alignment.</p></div>
           <div><h4>Energy &amp; a smaller model</h4><p>The Lab reports GPU energy per image from the NVML energy counter. BK-SDM-Tiny, a distilled SD1.5 UNet with 0.32B instead of 0.86B parameters, is an extra low-memory option for the planner and the model menu.</p></div>
+          <div><h4>Runs in your browser, too</h4><p>The <b>On-device</b> page loads SD-Turbo into the visitor's own browser and GPU with WebGPU (ONNX Runtime Web) — no server at all, so it works even when the team laptop is off. Our own CLIP tokenizer in JavaScript and an in-browser protobuf rewrite (weights moved to "external data", zero-copy) make the 1.6 GB UNet fit: ~1.6 s per image on a laptop RTX 4060.</p></div>
+          <div><h4>Dream mode</h4><p>24 one-step SD-Turbo frames (~0.1 s each) whose starting noise moves along a sphere between two seeds, or whose prompt embedding glides from one prompt to another — a smooth morphing animation in about 2 seconds, saved as a looping WebP.</p></div>
           <div><h4>Private by default</h4><p>Each browser gets an anonymous id: the gallery shows only your own images and only you can favourite or delete them; share links still open any image. Requests are rate-limited per browser so one visitor cannot fill the GPU queue.</p></div>
           <div><h4>On your phone</h4><p>Installable web app (manifest + service worker, works offline for the app shell and saved images), voice prompts through the Web Speech API, one-tap style presets and share links that always reach the live server.</p></div>
         </div>
@@ -306,6 +314,6 @@
   </div>
   <div class="toasts" id="toasts" aria-live="polite"></div>
 
-  <script src="/static/app.js?v=1.7"></script>
+  <script src="/static/app.js?v=1.8"></script>
 </body>
 </html>

@@ -345,7 +345,10 @@ class DiffusionEngine:
                  negative_prompt: str = "", deadline_ms: float | None = None,
                  preview: bool = False,
                  on_step: Callable[[int, int], None] | None = None,
-                 on_preview: Callable[[int, int, np.ndarray], None] | None = None) -> GenResult:
+                 on_preview: Callable[[int, int, np.ndarray], None] | None = None,
+                 noise: torch.Tensor | None = None, cond: torch.Tensor | None = None) -> GenResult:
+        """`noise` (n, 4, h/8, w/8) and `cond` (n, tokens, dim) replace the seeded initial noise and the
+        encoded prompt per batch element - used by Dream mode to interpolate between seeds / prompts."""
         cfg = resolve_device(cfg)
         if cfg.height % 8 or cfg.width % 8:
             raise ValueError("height and width must be multiples of 8")
@@ -376,19 +379,27 @@ class DiffusionEngine:
             if cfg.cfg:   # prompt and negative prompt must have the same number of chunks
                 n_chunks = max(self.n_prompt_chunks(bundle, prompt),
                                self.n_prompt_chunks(bundle, negative_prompt or ""))
-            cond = self.encode(bundle, [prompt], n_chunks)
+            if cond is not None:
+                cond = cond.to(dev, dtype)
+                n_chunks = cond.shape[1] // bundle.tokenizer.model_max_length
+            else:
+                cond = self.encode(bundle, [prompt], n_chunks)
+            cond = cond if cond.shape[0] == n else cond.expand(n, -1, -1)
             if cfg.cfg:
                 uncond = self.encode(bundle, [negative_prompt or ""], n_chunks)
-                emb = torch.cat([uncond.expand(n, -1, -1), cond.expand(n, -1, -1)])
+                emb = torch.cat([uncond.expand(n, -1, -1), cond])
             else:
-                emb = cond.expand(n, -1, -1)
+                emb = cond
             sync(dev)
             timings["text_encode"] = (time.perf_counter() - t0) * 1000
 
             # initial noise from per-candidate CPU generators -> identical across devices
             shape = (1, bundle.unet.config.in_channels, cfg.height // 8, cfg.width // 8)
-            lat = torch.cat([torch.randn(shape, generator=torch.Generator("cpu").manual_seed(s))
-                             for s in seeds]).to(dev, dtype)
+            if noise is not None:
+                lat = noise.to(dev, dtype)
+            else:
+                lat = torch.cat([torch.randn(shape, generator=torch.Generator("cpu").manual_seed(s))
+                                 for s in seeds]).to(dev, dtype)
             sched.set_timesteps(cfg.steps, device=dev)
             lat = lat * sched.init_noise_sigma
             timesteps = sched.timesteps

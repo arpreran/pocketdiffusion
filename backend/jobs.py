@@ -189,6 +189,8 @@ class JobManager:
                     self._edit(job)
                 elif job.kind == "preview":
                     self._preview(job)
+                elif job.kind == "dream":
+                    self._dream(job)
                 job.status = "done"
             except PromptRejected as e:
                 job.status = "error"
@@ -356,6 +358,73 @@ class JobManager:
         job.emit("result", {"image": b64_jpeg(img, size=512, quality=82), "gen_ms": res.latency_ms,
                             "total_ms": (time.perf_counter() - t0) * 1000, "model": cfg.name,
                             "prompt": analysis.clean_prompt})
+
+    # ------------------------------------------------------------------ dream mode: morphing animation
+    def _dream(self, job: Job) -> None:
+        from pocketdiff.dream import dream_frames, ping_pong
+        from pocketdiff.planner import family_available
+
+        p = job.params
+        pd = self.pipeline()
+        t0 = time.perf_counter()
+        a = pd.analyze(p["prompt"])
+        b = pd.analyze(p.get("prompt_b") or p["prompt"])
+        for x in (a, b):
+            if not x.clean_prompt:
+                raise PromptRejected("Describe what the animation should show.")
+            if x.blocked_terms:
+                raise PromptRejected(f"This prompt contains blocked terms ({', '.join(x.blocked_terms)}). Please rephrase.")
+        job.emit("analysis", a.to_dict())
+        cfg = (PRESETS["turbo1_taesd"] if family_available("sd_turbo")
+               else PRESETS["sd15_lcm4_taesd"].with_(steps=2)).with_(width=512, height=512)
+        seed = int(p["seed"]) if p.get("seed") is not None else random.randint(0, 2**31 - 1)
+        morph = b.clean_prompt != a.clean_prompt
+        seed_b = seed if morph else seed + 1          # prompt morph: same noise; seed walk: next seed
+        frames_n = int(min(max(int(p.get("frames", 24)), 8), 48))
+        job.emit("stage", {"name": "denoise", "config": cfg.to_dict(), "n": frames_n})
+
+        def on_frame(i, total, img):
+            job.emit("frame", {"i": i, "total": total, "image": b64_jpeg(img, size=512, quality=80)})
+
+        frames, gen_ms = dream_frames(pd.engine, cfg, a.clean_prompt, b.clean_prompt, seed, seed_b,
+                                      frames=frames_n, on_frame=on_frame)
+        events = [f"Dream: {frames_n} frames ({'prompt morph' if morph else 'seed walk'}) in {gen_ms:.0f} ms "
+                  f"= {gen_ms / frames_n:.0f} ms per frame ({cfg.name})"]
+        if pd.scorer is not None:                     # safety on first / middle / last frame
+            checks = pd.scorer.safety([frames[0], frames[len(frames) // 2], frames[-1]])
+            if any(c["unsafe"] for c in checks):
+                import cv2
+                frames = [cv2.GaussianBlur(f, (0, 0), 25) for f in frames]
+                events.append("Image-level safety check flagged the animation -> blurred.")
+        job.emit("stage", {"name": "saving"})
+        gid = time.strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]
+        d = self.store / gid
+        d.mkdir(parents=True, exist_ok=True)
+        save = _image_saver(d, gid)
+        loop = [to_pil(f).resize((384, 384), Image.LANCZOS) for f in ping_pong(frames)]
+        loop[0].save(d / "dream.webp", "WEBP", save_all=True, append_images=loop[1:], duration=83, loop=0,
+                     quality=72, method=1)
+        clip = float(pd.scorer.clip_score([frames[0]], a.clean_prompt)[0]) if pd.scorer is not None else None
+        wall = (time.perf_counter() - t0) * 1000
+        row = {
+            "id": gid, "created_at": time.time(), "kind": "dream", "owner": p.get("owner"),
+            "prompt": a.clean_prompt if not morph else f"{a.clean_prompt}  →  {b.clean_prompt}",
+            "seed": seed, "mode": "dream", "family": cfg.family, "scheduler": cfg.scheduler, "steps": cfg.steps,
+            "steps_done": cfg.steps, "width": 512, "height": 512, "quant": cfg.quant, "decoder": cfg.vae,
+            "text_encoder": cfg.text_encoder, "n_candidates": frames_n, "latency_ms": wall, "gen_ms": gen_ms,
+            "clip": clip, "image_path": save(frames[0], "final.png", "PNG"),
+            "raw_path": save(frames[-1], "last.jpg"),
+            "config_json": json.dumps(_jsonable(cfg.to_dict())),
+            "analysis_json": json.dumps(_jsonable(a.to_dict())),
+            "timings_json": json.dumps(_jsonable({"gen.denoise": gen_ms, "wall": wall})),
+            "metrics_json": json.dumps(_jsonable({"dream": {"video": f"{gid}/dream.webp", "frames": frames_n,
+                                                            "morph": morph, "prompt_b": b.clean_prompt,
+                                                            "ms_per_frame": gen_ms / frames_n, "fps": 12}})),
+            "events_json": json.dumps(events),
+        }
+        self.db.insert_generation(row, [], [], [])
+        job.result_id = gid
+        job.emit("result", self.db.get(gid))
 
     # ------------------------------------------------------------------ image-to-image editing
     def _edit_source(self, p: dict) -> Image.Image:

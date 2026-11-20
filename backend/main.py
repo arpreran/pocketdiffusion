@@ -8,6 +8,8 @@ POST /api/plan                   prompt + budget -> planner decision            
 POST /api/generate               enqueue a generation job -> {job_id}
 POST /api/compare                enqueue baseline-vs-optimised race -> {job_id}
 POST /api/edit                   image-to-image edit of an upload or a stored image -> {job_id}
+POST /api/dream                  morphing animation (seed walk or prompt morph) -> {job_id}
+POST /api/preview                live preview while typing (1 step, not stored)
 GET  /api/jobs/{id}/events       Server-Sent Events: queued/start/analysis/plan/step/stage/result/error/end
 GET  /api/generations            history (paginated, filter: favorites, family, q)
 GET  /api/generations/{id}       full record (candidates, stages, frames, metrics)
@@ -246,6 +248,13 @@ class EditIn(BaseModel):
         return self
 
 
+class DreamIn(BaseModel):
+    prompt: str = Field(..., min_length=1, max_length=2000)
+    prompt_b: str = Field("", max_length=2000)
+    seed: int | None = Field(None, ge=0, le=2**31 - 1)
+    frames: int = Field(24, ge=8, le=48)
+
+
 class PreviewIn(BaseModel):
     prompt: str = Field(..., min_length=1, max_length=2000)
     seed: int | None = Field(None, ge=0, le=2**31 - 1)
@@ -357,7 +366,7 @@ def system(request: Request):
         "default_device": "this_gpu" if gpu else "this_cpu",
         "public_page": public_page(),
         "admin": bool(request.state.admin),
-        "features": ["generate", "edit", "attention", "share", "pwa", "compare"] + (["preview"] if gpu else []),
+        "features": ["generate", "edit", "attention", "share", "pwa", "compare"] + (["preview", "dream"] if gpu else []),
     }
 
 
@@ -403,6 +412,16 @@ def edit(body: EditIn, request: Request):
     if body.source_id and not db.owner_of(body.source_id)[0]:
         raise HTTPException(404, "source image not found")
     job = jobs.submit("edit", {**body.model_dump(), "owner": admit_job(request)})
+    return {"job_id": job.id, "queue": jobs.queue_length()}
+
+
+@app.post("/api/dream")
+def dream(body: DreamIn, request: Request):
+    """Dream mode: a morphing animation (seed walk, or prompt A -> prompt B) from 1-step frames."""
+    from pocketdiff.utils import cuda_available
+    if not cuda_available():
+        raise HTTPException(503, "Dream mode needs the GPU server (one generation per frame).")
+    job = jobs.submit("dream", {**body.model_dump(), "owner": admit_job(request)})
     return {"job_id": job.id, "queue": jobs.queue_length()}
 
 

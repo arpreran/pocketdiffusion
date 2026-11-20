@@ -51,7 +51,7 @@
     <a id="open" class="btn primary hidden" href="#">Open the live demo</a>
     <a class="btn" href="https://github.com/arpreran/pocketdiffusion">Source code &amp; report (GitHub)</a>
   </div>
-  <footer id="foot">This page always opens the demo: on the team's laptop GPU when it is online, otherwise on an always-on cloud GPU (Modal).</footer>
+  <footer id="foot">This page always opens the current demo link. The demo runs on the team's laptop GPU, so it is available while that laptop is switched on and online; a cloud copy is used as a backup when it is enabled.</footer>
 </main>
 <script>
 const $ = (id) => document.getElementById(id);
@@ -82,6 +82,8 @@ function go(url, s, where) {
   show("ok", SHARE ? "Opening the shared image…" : "Live demo is running — opening it…",
        `${where} · ${gpu} · ${s.ready ? "ready" : "warming up"}`);
   $("open").href = target;
+  $("open").onclick = null;
+  $("open").textContent = "Open the live demo";
   $("open").classList.remove("hidden");
   setTimeout(() => location.replace(target), 800);
 }
@@ -94,17 +96,19 @@ async function check() {
   if (laptop) {
     try { return go(laptop, await probe(laptop, 10000), "team laptop"); } catch {}
   }
-  show("checking", "Starting the cloud GPU server…",
-       "The laptop demo is offline, so the always-on cloud copy is starting. " +
-       "The first visit after a quiet period takes about 1–2 minutes.");
-  $("open").href = cloud;
+  show("checking", "The laptop is not answering — trying the cloud backup…",
+       "If the cloud copy is enabled, its first start after a quiet period takes 1–2 minutes.");
   try { return go(cloud, await probe(cloud, 180000), "cloud"); } catch {}
-  show("off", "The live demo is not reachable right now",
-       "Neither the laptop nor the cloud server answered. This page tries again every 20 seconds.");
+  show("off", "The demo laptop is asleep or offline right now",
+       "PocketDiffusion runs on the team's laptop GPU. Keep this page open: it checks every 15 seconds " +
+       "and opens the demo by itself as soon as the laptop is back online.");
   $("open").classList.remove("hidden");
-  $("open").textContent = "Open the cloud copy anyway";
-  setTimeout(check, 20000);
+  $("open").textContent = "Try again now";
+  $("open").href = "#";
+  $("open").onclick = (e) => { e.preventDefault(); clearTimeout(retry); check(); };
+  retry = setTimeout(check, 15000);
 }
+let retry = null;
 check();
 </script>
 </body>

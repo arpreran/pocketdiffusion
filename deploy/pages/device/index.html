@@ -338,6 +338,13 @@ $("go").onclick = async () => {
   $("gpuPill").textContent = `WebGPU ready · ${[info.vendor, info.architecture].filter(Boolean).join(" ") || "GPU"}`;
   $("gpuPill").className = "pill ok";
   $("dev").textContent = `SD-Turbo · 1 step · 512×512 · runs on ${info.vendor || "your GPU"}`;
+  // integrated laptop graphics and phone GPUs usually reset during the 1.6 GB UNet: say so before the download
+  const mobile = navigator.userAgentData?.mobile || /Android|iPhone|iPad/i.test(navigator.userAgent);
+  if (info.vendor === "intel" || mobile) {
+    status(`⚠ This browser reports ${mobile ? "a phone GPU" : `integrated graphics (${[info.vendor, info.architecture].filter(Boolean).join(" ")})`}.
+      The 1.6 GB model often makes such GPUs reset; a laptop or desktop with a dedicated GPU (NVIDIA / AMD / Apple M-series) works best.
+      You can still try — or <a href="../?showcase">see real results</a>.`);
+  }
   try { const c = await caches.open(CACHE); if (await c.match(BASE + FILES.unet.path)) $("go").textContent = "Load the model (cached — a few seconds)"; } catch { /* no cache */ }
 })();
 </script>
